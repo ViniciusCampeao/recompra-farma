@@ -1,0 +1,48 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { PurchasesService } from './purchases.service';
+import { CreatePurchaseDto, UpdatePurchaseDto } from './dto/create-purchase.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
+@ApiTags('Purchases')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
+@Controller('purchases')
+export class PurchasesController {
+  constructor(private readonly service: PurchasesService) {}
+
+  @Post()
+  create(@Body() dto: CreatePurchaseDto) {
+    return this.service.create(dto);
+  }
+
+  @Get()
+  findAll(@Query('customerId') customerId?: string) {
+    return this.service.findAll(customerId);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdatePurchaseDto) {
+    return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  cancel(@Param('id') id: string) {
+    return this.service.cancel(id);
+  }
+}

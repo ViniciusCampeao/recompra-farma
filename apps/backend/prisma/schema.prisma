@@ -1,0 +1,275 @@
+// =============================================================================
+// Recompra Farma - Modelo de dados
+// Single-tenant (uma farmácia). Postgres.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Autenticação (atendentes / admin)
+// -----------------------------------------------------------------------------
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String // hash bcrypt
+  role      UserRole @default(ATTENDANT)
+  active    Boolean  @default(true)
+
+  sentMessages MessageLog[] @relation("SentBy")
+  auditLogs    AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  ATTENDANT
+}
+
+// -----------------------------------------------------------------------------
+// Cliente da farmácia (pessoa). Telefone único = chave natural p/ upsert.
+// -----------------------------------------------------------------------------
+model Customer {
+  id       String  @id @default(uuid())
+  name     String? // opcional
+  phone    String  @unique // normalizado E.164 (ex: 5514999999999)
+  phoneRaw String? // como foi digitado pelo atendente
+  notes    String? @db.Text
+
+  purchases   Purchase[]
+  messageLogs MessageLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@map("customers")
+}
+
+// -----------------------------------------------------------------------------
+// Compra / Tratamento. Cada cadastro tem config de lembrete independente.
+// -----------------------------------------------------------------------------
+model Purchase {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  medicationName String
+  quantity       Float // quantidade comprada (ex: 30)
+  unit           String // comprimidos, ml, etc
+  dosePerDay     Float? // quantidade utilizada por dia (opcional)
+  treatmentDays  Int? // tempo de tratamento em dias (opcional)
+
+  purchaseDate     DateTime // default = hoje (resolvido no service)
+  estimatedEndDate DateTime // calculado: ver regra em docs/CALCULO.md
+
+  status PurchaseStatus @default(ACTIVE)
+
+  reminderConfig ReminderConfig?
+  reminders      ScheduledReminder[]
+  messageLogs    MessageLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([estimatedEndDate])
+  @@map("purchases")
+}
+
+enum PurchaseStatus {
+  ACTIVE
+  FINISHED // tratamento finalizado
+  CANCELLED // lembretes cancelados / cadastro encerrado
+}
+
+// -----------------------------------------------------------------------------
+// Configuração de lembrete - 1:1 com a compra (regras por cadastro)
+//   advance  = aviso antecipado (X dias antes)
+//   finalDay = aviso no dia do término
+//   sendHour = horário do disparo (default 10h, ajustável por cadastro)
+// -----------------------------------------------------------------------------
+model ReminderConfig {
+  id         String   @id @default(uuid())
+  purchaseId String   @unique
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  advanceEnabled Boolean @default(true)
+  advanceDays    Int     @default(3) // X dias antes do término
+
+  finalDayEnabled Boolean @default(true)
+
+  sendHour   Int @default(10) // 0-23
+  sendMinute Int @default(0) // 0-59
+
+  // template opcional por cadastro; null => usa o default global do tipo
+  advanceTemplateId  String?
+  advanceTemplate    MessageTemplate? @relation("AdvanceTemplate", fields: [advanceTemplateId], references: [id])
+  finalDayTemplateId String?
+  finalDayTemplate   MessageTemplate? @relation("FinalDayTemplate", fields: [finalDayTemplateId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reminder_configs")
+}
+
+// -----------------------------------------------------------------------------
+// Lembrete materializado - é o que o scheduler varre a cada poucos minutos
+// -----------------------------------------------------------------------------
+model ScheduledReminder {
+  id         String   @id @default(uuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  type         ReminderType
+  scheduledFor DateTime // instante alvo do disparo
+  status       ReminderStatus @default(PENDING)
+  attempts     Int            @default(0)
+  lastError    String?        @db.Text
+
+  sentAt       DateTime?
+  messageLogId String?     @unique
+  messageLog   MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([purchaseId])
+  @@map("scheduled_reminders")
+}
+
+enum ReminderType {
+  ADVANCE
+  FINAL_DAY
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// -----------------------------------------------------------------------------
+// Templates de mensagem editáveis (com variáveis {{cliente}}, {{medicamento}}...)
+// -----------------------------------------------------------------------------
+model MessageTemplate {
+  id        String        @id @default(uuid())
+  key       String        @unique // 'advance_default', 'final_day_default'
+  name      String
+  type      ReminderType? // null = mensagem avulsa/manual
+  body      String        @db.Text
+  isDefault Boolean       @default(false)
+  active    Boolean       @default(true)
+
+  advanceConfigs  ReminderConfig[] @relation("AdvanceTemplate")
+  finalDayConfigs ReminderConfig[] @relation("FinalDayTemplate")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("message_templates")
+}
+
+// -----------------------------------------------------------------------------
+// Histórico de mensagens (enviadas, falhas, pendentes)
+// -----------------------------------------------------------------------------
+model MessageLog {
+  id         String    @id @default(uuid())
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
+  phone     String // destino normalizado
+  body      String           @db.Text
+  channel   String           @default("whatsapp")
+  direction MessageDirection @default(OUTBOUND)
+  origin    MessageOrigin // SCHEDULED ou MANUAL
+  status    MessageStatus    @default(PENDING)
+
+  providerMessageId String? // id retornado pela Evolution
+  error             String? @db.Text
+
+  sentById String?
+  sentBy   User?   @relation("SentBy", fields: [sentById], references: [id], onDelete: SetNull)
+
+  reminder ScheduledReminder?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("message_logs")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageOrigin {
+  SCHEDULED
+  MANUAL
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+  READ
+}
+
+// -----------------------------------------------------------------------------
+// Estado da sessão de WhatsApp (Evolution instance)
+// -----------------------------------------------------------------------------
+model WhatsappSession {
+  id           String @id @default(uuid())
+  instanceName String @unique
+
+  status          String    @default("disconnected") // connected | connecting | qrcode | disconnected
+  number          String?
+  lastConnectedAt DateTime?
+  lastQrAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("whatsapp_sessions")
+}
+
+// -----------------------------------------------------------------------------
+// Auditoria / histórico completo de alterações (diferencial)
+// -----------------------------------------------------------------------------
+model AuditLog {
+  id       String  @id @default(uuid())
+  entity   String // ex: "Purchase"
+  entityId String
+  action   String // CREATE | UPDATE | DELETE
+  changes  Json?
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
