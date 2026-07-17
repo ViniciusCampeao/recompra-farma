@@ -88,7 +88,15 @@ function PurchModal({ open, onClose, onOk }: { open: boolean; onClose: () => voi
             <input style={inp} type="number" value={f.qty} onChange={s("qty")} placeholder="30" />
           </Field>
           <Field label="Unidade">
-            <input style={inp} value={f.unit} onChange={s("unit")} placeholder="comprimidos" />
+            <select style={{ ...inp, appearance: "none" }} value={f.unit} onChange={s("unit")}>
+              <option value="comprimidos">comprimidos</option>
+              <option value="cápsulas">cápsulas</option>
+              <option value="ml">ml</option>
+              <option value="gotas">gotas</option>
+              <option value="sachês">sachês</option>
+              <option value="ampolas">ampolas</option>
+              <option value="unidades">unidades</option>
+            </select>
           </Field>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

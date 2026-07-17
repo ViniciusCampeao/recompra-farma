@@ -28,9 +28,16 @@ export class EvolutionController {
     this.apiKey = config.get('EVOLUTION_API_KEY', { infer: true });
   }
 
-  @All('*')
+  @All('*path')
   async proxy(@Req() req: Request, @Res() res: Response) {
-    const path = req.params[0] || '';
+    // NestJS 11 / path-to-regexp: wildcard vem em req.params.path (array ou string).
+    // Fallback: extrai da própria URL após "/api/evolution/".
+    const p = (req.params as Record<string, unknown>).path;
+    let path = Array.isArray(p) ? p.join('/') : (typeof p === 'string' ? p : '');
+    if (!path) {
+      const m = req.url.match(/\/evolution\/([^?]*)/);
+      path = m ? m[1] : '';
+    }
     const url = `${this.baseURL}/${path}`;
     const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
 
