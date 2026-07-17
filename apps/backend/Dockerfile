@@ -13,8 +13,8 @@ RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists
 COPY apps/backend/package*.json ./
 RUN npm ci
 COPY apps/backend/prisma ./prisma
-RUN npx prisma generate
 COPY apps/backend .
+RUN npx prisma generate
 RUN npm run build
 RUN npx tsc prisma/seed.ts --outDir dist/seed --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --resolveJsonModule
 
