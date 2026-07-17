@@ -2,7 +2,6 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { C, inp, btn } from "../lib/theme";
-import { Card } from "../components/ui/Card";
 
 export function Login() {
   const { login } = useAuth();
@@ -25,25 +24,27 @@ export function Login() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg, padding: 16 }}>
-      <Card style={{ width: "100%", maxWidth: 400 }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 32, marginBottom: 4 }}>💊</div>
-          <h1 style={{ fontSize: 24 }}>Recompra Farma</h1>
-          <p style={{ color: C.tm, fontSize: 14, marginTop: 6 }}>Acesse sua conta</p>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: C.pr, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: "#fff", fontSize: 22, fontWeight: 700 }}>F</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "0.01em" }}>Farma Tec</h1>
+          <p style={{ color: C.tm, fontSize: 13, marginTop: 4 }}>Acesse sua conta</p>
         </div>
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 13, color: C.tm, marginBottom: 6 }}>Email</label>
-          <input style={inp} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@farmacia.local" onKeyDown={e => e.key === "Enter" && go()} />
+        <div style={{ background: C.sf, borderRadius: 8, border: "1px solid " + C.bd, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Email</label>
+            <input style={inp} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@farmacia.local" onKeyDown={e => e.key === "Enter" && go()} />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Senha</label>
+            <input style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••" onKeyDown={e => e.key === "Enter" && go()} />
+          </div>
+          {err && <div style={{ color: C.dn, fontSize: 12, marginBottom: 14, padding: "8px 12px", background: C.dn + "14", borderRadius: 6 }}>{err}</div>}
+          <button onClick={go} disabled={loading} style={{ ...btn, width: "100%", justifyContent: "center", background: C.pr, color: "#fff", opacity: loading ? 0.7 : 1 }}>
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
         </div>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: "block", fontSize: 13, color: C.tm, marginBottom: 6 }}>Senha</label>
-          <input style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••" onKeyDown={e => e.key === "Enter" && go()} />
-        </div>
-        {err && <div style={{ color: C.dn, fontSize: 13, marginBottom: 14 }}>{err}</div>}
-        <button onClick={go} disabled={loading} style={{ ...btn, width: "100%", justifyContent: "center", background: C.pr, color: "#fff", opacity: loading ? 0.6 : 1 }}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-      </Card>
+      </div>
     </div>
   );
 }

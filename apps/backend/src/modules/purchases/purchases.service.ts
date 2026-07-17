@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePurchaseDto, UpdatePurchaseDto } from './dto/create-purchase.dto';
 import { ReminderType, ReminderStatus, PurchaseStatus } from '@prisma/client';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 
 @Injectable()
 export class PurchasesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly whatsapp: WhatsappService,
+  ) {}
 
   /**
    * Calcula a data estimada de término do tratamento.
@@ -175,6 +179,30 @@ export class PurchasesService {
       data,
       include: { reminderConfig: true, reminders: true },
     });
+  }
+
+  async sendTest(customerId: string, message: string, sentById?: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
+    if (!customer) throw new NotFoundException('Cliente não encontrado');
+
+    const result = await this.whatsapp.sendText(customer.phone, message);
+
+    await this.prisma.messageLog.create({
+      data: {
+        phone: customer.phone,
+        body: message,
+        direction: 'OUTBOUND',
+        origin: 'MANUAL',
+        status: result.success ? 'SENT' : 'FAILED',
+        customerId: customer.id,
+        providerMessageId: result.messageId ?? null,
+        error: result.error ?? null,
+        sentById: sentById ?? null,
+      },
+    });
+
+    if (!result.success) throw new BadRequestException(result.error || 'Falha ao enviar');
+    return { success: true };
   }
 
   async cancel(id: string) {

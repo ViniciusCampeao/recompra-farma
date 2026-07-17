@@ -10,6 +10,9 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
+import { MessagesModule } from './modules/messages/messages.module';
+import { UsersModule } from './modules/users/users.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -27,6 +30,9 @@ import { validateEnv } from './config/env.validation';
     TemplatesModule,
     WhatsappModule,
     SchedulerModule,
+    MessagesModule,
+    UsersModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

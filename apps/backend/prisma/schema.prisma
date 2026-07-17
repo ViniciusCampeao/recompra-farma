@@ -256,6 +256,19 @@ model WhatsappSession {
 }
 
 // -----------------------------------------------------------------------------
+// Configurações globais da aplicação (chave-valor)
+// -----------------------------------------------------------------------------
+model AppSettings {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String @db.Text
+
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+// -----------------------------------------------------------------------------
 // Auditoria / histórico completo de alterações (diferencial)
 // -----------------------------------------------------------------------------
 model AuditLog {

@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto, UpdatePurchaseDto } from './dto/create-purchase.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Purchases')
 @ApiBearerAuth()
@@ -20,6 +21,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @Controller('purchases')
 export class PurchasesController {
   constructor(private readonly service: PurchasesService) {}
+
+  @Post('send-test')
+  sendTest(
+    @Body() body: { customerId: string; message: string },
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.service.sendTest(body.customerId, body.message, user.id);
+  }
 
   @Post()
   create(@Body() dto: CreatePurchaseDto) {

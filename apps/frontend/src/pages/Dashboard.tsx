@@ -6,13 +6,9 @@ import { Card } from "../components/ui/Card";
 import { Stat } from "../components/ui/Stat";
 import { Badge } from "../components/ui/Badge";
 import { Icon } from "../components/ui/Icon";
+import { PageHeader } from "../components/ui/PageHeader";
 
-interface Stats {
-  c: number;
-  a: number;
-  p: number;
-  s: number;
-}
+interface Stats { c: number; a: number; p: number; s: number }
 
 export function Dashboard() {
   const { token } = useAuth();
@@ -33,21 +29,21 @@ export function Dashboard() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, marginBottom: 24 }}>Painel</h1>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <Stat icon="users" label="Clientes" value={st.c} color={C.pr} />
-        <Stat icon="cart" label="Compras ativas" value={st.a} color={C.ok} />
-        <Stat icon="clock" label="Pendentes" value={st.p} color={C.wn} />
-        <Stat icon="check" label="Enviados" value={st.s} color={C.ok} />
+      <PageHeader title="Painel" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+        <Stat icon="users"  label="Clientes"       value={st.c} color={C.pr} />
+        <Stat icon="cart"   label="Compras Ativas"  value={st.a} color={C.ok} />
+        <Stat icon="clock"  label="Pendentes"       value={st.p} color={C.wn} />
+        <Stat icon="check"  label="Enviados"        value={st.s} color={C.ok} />
       </div>
-      <Card style={{ marginTop: 24 }}>
+      <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Icon name="wifi" size={20} />
-            <span style={{ fontWeight: 600 }}>Status do Sistema</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Icon name="wifi" size={18} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Status do Sistema</span>
           </div>
           <Badge color={apiOk === null ? C.tm : apiOk ? C.ok : C.dn}>
-            {apiOk === null ? "Verificando..." : apiOk ? "API Online" : "API Offline"}
+            {apiOk === null ? "Verificando" : apiOk ? "Online" : "Offline"}
           </Badge>
         </div>
       </Card>

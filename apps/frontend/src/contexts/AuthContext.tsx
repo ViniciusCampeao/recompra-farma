@@ -2,8 +2,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { api } from "../lib/api";
 
 interface User {
+  id: string;
   name?: string;
   email: string;
+  role: string;
 }
 
 interface AuthCtx {
@@ -14,6 +16,7 @@ interface AuthCtx {
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
+const LS_KEY = "farmatec_token";
 
 export function useAuth() {
   const ctx = useContext(Ctx);
@@ -22,11 +25,19 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem(LS_KEY));
   const [user, setUser] = useState<User | null>(null);
 
-  const logout = () => { setToken(null); setUser(null); };
-  const login = (t: string) => setToken(t);
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem(LS_KEY);
+  };
+
+  const login = (t: string) => {
+    setToken(t);
+    localStorage.setItem(LS_KEY, t);
+  };
 
   useEffect(() => {
     if (!token) return;

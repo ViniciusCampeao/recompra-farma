@@ -3,11 +3,17 @@ import { C } from "../lib/theme";
 import { Icon } from "./ui/Icon";
 import { useAuth } from "../contexts/AuthContext";
 
-const nav = [
-  { k: "dash", l: "Painel", i: "home" },
-  { k: "cust", l: "Clientes", i: "users" },
-  { k: "purch", l: "Compras", i: "cart" },
-  { k: "tpl", l: "Templates", i: "tpl" },
+interface NavItem { k: string; l: string; i: string; adminOnly?: boolean }
+
+const nav: NavItem[] = [
+  { k: "dash",     l: "Painel",       i: "home" },
+  { k: "cust",     l: "Clientes",     i: "users" },
+  { k: "purch",    l: "Compras",      i: "cart" },
+  { k: "tpl",      l: "Templates",    i: "tpl" },
+  { k: "whatsapp", l: "WhatsApp",     i: "whatsapp" },
+  { k: "msgs",     l: "Mensagens",    i: "chat" },
+  { k: "settings", l: "Configurações",i: "gear" },
+  { k: "users",    l: "Usuários",     i: "userplus", adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -17,43 +23,105 @@ interface SidebarProps {
 
 export function Sidebar({ active, onChange }: SidebarProps) {
   const { user, logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(window.innerWidth < 768);
+  const [collapsed, setCollapsed] = useState(window.innerWidth < 900);
+  const isAdmin = (user as any)?.role === "ADMIN";
+
+  const items = nav.filter(n => !n.adminOnly || isAdmin);
 
   return (
-    <div style={{ width: collapsed ? 64 : 220, minHeight: "100vh", background: C.sf, borderRight: "1px solid " + C.bd, display: "flex", flexDirection: "column", transition: "width .2s", flexShrink: 0 }}>
+    <div style={{
+      width: collapsed ? 56 : 210,
+      minHeight: "100vh",
+      background: C.sb,
+      display: "flex",
+      flexDirection: "column",
+      transition: "width .2s",
+      flexShrink: 0,
+    }}>
       <div
-        style={{ padding: collapsed ? "20px 12px" : "20px 18px", borderBottom: "1px solid " + C.bd, display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
         onClick={() => setCollapsed(!collapsed)}
+        style={{
+          padding: collapsed ? "18px 0" : "18px 16px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          cursor: "pointer",
+          justifyContent: collapsed ? "center" : "flex-start",
+        }}
       >
-        <span style={{ fontSize: 22 }}>💊</span>
-        {!collapsed && <span style={{ fontSize: 16, fontWeight: 700 }}>Recompra</span>}
+        <span style={{ fontSize: 20, lineHeight: 1 }}>＋</span>
+        {!collapsed && (
+          <span style={{ color: C.sbt, fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Farma Tec
+          </span>
+        )}
       </div>
-      <nav style={{ flex: 1, padding: "12px 8px" }}>
-        {nav.map(n => {
+
+      <nav style={{ flex: 1, padding: "10px 6px" }}>
+        {items.map(n => {
           const a = active === n.k;
           return (
             <button
               key={n.k}
               onClick={() => onChange(n.k)}
-              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 12px" : "10px 14px", borderRadius: 8, border: "none", cursor: "pointer", background: a ? C.pr + "20" : "transparent", color: a ? C.pr : C.tm, fontSize: 14, fontWeight: a ? 600 : 400, marginBottom: 4, textAlign: "left", transition: "background .15s" }}
+              title={collapsed ? n.l : undefined}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                width: "100%",
+                padding: collapsed ? "9px 0" : "9px 12px",
+                justifyContent: collapsed ? "center" : "flex-start",
+                borderRadius: 6,
+                border: "none",
+                cursor: "pointer",
+                background: a ? C.sba : "transparent",
+                color: a ? C.sbt : C.sbm,
+                fontSize: 12,
+                fontWeight: a ? 600 : 400,
+                letterSpacing: "0.03em",
+                marginBottom: 2,
+                textAlign: "left",
+                transition: "background .12s, color .12s",
+              }}
             >
-              <Icon name={n.i} size={20} />
+              <Icon name={n.i} size={17} />
               {!collapsed && n.l}
             </button>
           );
         })}
       </nav>
-      <div style={{ padding: collapsed ? "16px 8px" : "16px 14px", borderTop: "1px solid " + C.bd }}>
+
+      <div style={{
+        padding: collapsed ? "12px 6px" : "12px 10px",
+        borderTop: "1px solid rgba(255,255,255,0.08)",
+      }}>
         {!collapsed && user && (
-          <div style={{ fontSize: 13, color: C.tm, marginBottom: 10, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <div style={{ fontSize: 11, color: C.sbm, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "0.02em" }}>
             {user.name || user.email}
           </div>
         )}
         <button
           onClick={logout}
-          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: C.dn, fontSize: 13, textAlign: "left" }}
+          title={collapsed ? "Sair" : undefined}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: 8,
+            width: "100%",
+            padding: "8px 6px",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+            background: "transparent",
+            color: C.sbm,
+            fontSize: 12,
+            textAlign: "left",
+          }}
         >
-          <Icon name="out" size={18} />
+          <Icon name="out" size={16} />
           {!collapsed && "Sair"}
         </button>
       </div>
