@@ -42,8 +42,11 @@ interface EvoMessage {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-const jidToPhone = (jid: string) => jid.replace(/@.*/, "");
-const isGroup = (jid: string) => jid.endsWith("@g.us");
+// Número puro (só dígitos), sem sufixo @s.whatsapp.net / @c.us — usado para
+// agrupar e comparar contatos, já que o Evolution varia o sufixo do JID entre
+// mensagens enviadas e recebidas.
+const jidToPhone = (jid: string) => (jid || "").replace(/[@:].*/, "").replace(/\D/g, "");
+const isGroup = (jid: string) => (jid || "").endsWith("@g.us");
 
 const chatTitle = (c: Chat) => c.name || c.pushName || jidToPhone(c.remoteJid);
 
@@ -145,13 +148,21 @@ export function WhatsApp() {
     setLoadingChats(true);
     try {
       const raw = await api<Chat[]>(`/evolution/chat/findChats/${INSTANCE}`, { method: "POST", body: {}, token: token! });
-      const list = (Array.isArray(raw) ? raw : [])
-        .filter(c => c.remoteJid && !isGroup(c.remoteJid) && c.remoteJid !== "status@broadcast")
-        .sort((a, b) => {
-          const ta = a.lastMessage?.messageTimestamp || 0;
-          const tb = b.lastMessage?.messageTimestamp || 0;
-          return tb - ta;
-        });
+      // Desduplica por número: o Evolution pode retornar o mesmo contato com
+      // sufixos de JID diferentes (@s.whatsapp.net / @c.us). Mantém o chat com
+      // a mensagem mais recente e descarta os duplicados.
+      const byPhone = new Map<string, Chat>();
+      for (const c of Array.isArray(raw) ? raw : []) {
+        if (!c.remoteJid || isGroup(c.remoteJid) || c.remoteJid === "status@broadcast") continue;
+        const phone = jidToPhone(c.remoteJid);
+        if (!phone) continue;
+        const prev = byPhone.get(phone);
+        const t = c.lastMessage?.messageTimestamp || 0;
+        const tPrev = prev?.lastMessage?.messageTimestamp || 0;
+        if (!prev || t >= tPrev) byPhone.set(phone, c);
+      }
+      const list = [...byPhone.values()].sort((a, b) =>
+        (b.lastMessage?.messageTimestamp || 0) - (a.lastMessage?.messageTimestamp || 0));
       setChats(list);
     } catch (e) {
       setToast({ msg: "Falha ao carregar conversas: " + (e as Error).message, type: "error" });
@@ -164,16 +175,30 @@ export function WhatsApp() {
     if (state === "open") loadChats();
   }, [state, loadChats]);
 
-  const loadMessages = useCallback(async (jid: string) => {
+  // Recebe o NÚMERO (não o JID). Busca por ambos os sufixos e mescla, para
+  // reunir mensagens enviadas e recebidas do mesmo contato numa só conversa.
+  const loadMessages = useCallback(async (phone: string) => {
     setLoadingMsgs(true);
     try {
-      const raw = await api<{ messages?: { records?: EvoMessage[] } } | EvoMessage[]>(
-        `/evolution/chat/findMessages/${INSTANCE}`,
-        { method: "POST", body: { where: { key: { remoteJid: jid } } }, token: token! });
-      const records = Array.isArray(raw) ? raw : (raw?.messages?.records || []);
-      const sorted = [...records].sort(
-        (a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
-      setMessages(sorted);
+      const jids = [`${phone}@s.whatsapp.net`, `${phone}@c.us`];
+      const results = await Promise.all(jids.map(jid =>
+        api<{ messages?: { records?: EvoMessage[] } } | EvoMessage[]>(
+          `/evolution/chat/findMessages/${INSTANCE}`,
+          { method: "POST", body: { where: { key: { remoteJid: jid } } }, token: token! })
+          .then(r => (Array.isArray(r) ? r : (r?.messages?.records || [])))
+          .catch(() => [] as EvoMessage[])
+      ));
+      // Mescla e desduplica por id da mensagem
+      const seen = new Set<string>();
+      const merged: EvoMessage[] = [];
+      for (const rec of results.flat()) {
+        const id = rec.key?.id;
+        if (id && seen.has(id)) continue;
+        if (id) seen.add(id);
+        merged.push(rec);
+      }
+      merged.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
+      setMessages(merged);
     } catch (e) {
       setToast({ msg: "Falha ao carregar mensagens: " + (e as Error).message, type: "error" });
       setMessages([]);
@@ -183,9 +208,10 @@ export function WhatsApp() {
   }, [token]);
 
   const openChat = (jid: string) => {
-    setActiveJid(jid);
+    const phone = jidToPhone(jid);
+    setActiveJid(phone);
     setMessages([]);
-    loadMessages(jid);
+    loadMessages(phone);
   };
 
   // Auto-refresh das mensagens do chat aberto a cada 8s
@@ -204,7 +230,7 @@ export function WhatsApp() {
     try {
       await api(`/evolution/message/sendText/${INSTANCE}`, {
         method: "POST",
-        body: { number: jidToPhone(activeJid), text },
+        body: { number: activeJid, text },
         token: token!,
       });
       setDraft("");
@@ -221,7 +247,7 @@ export function WhatsApp() {
     chatTitle(c).toLowerCase().includes(search.toLowerCase()) ||
     jidToPhone(c.remoteJid).includes(search));
 
-  const activeChat = chats.find(c => c.remoteJid === activeJid);
+  const activeChat = chats.find(c => jidToPhone(c.remoteJid) === activeJid);
 
   // ---------------------------------------------------------------------------
   // Render: DESCONECTADO → QR
@@ -319,7 +345,7 @@ export function WhatsApp() {
               <div style={{ padding: 20, textAlign: "center", color: C.tm, fontSize: 12 }}>Nenhuma conversa ainda</div>
             )}
             {filteredChats.map(c => {
-              const active = c.remoteJid === activeJid;
+              const active = jidToPhone(c.remoteJid) === activeJid;
               const last = extractText(c.lastMessage?.message);
               return (
                 <div
@@ -380,8 +406,8 @@ export function WhatsApp() {
                   {activeChat ? chatTitle(activeChat).charAt(0).toUpperCase() : "?"}
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{activeChat ? chatTitle(activeChat) : jidToPhone(activeJid)}</div>
-                  <div style={{ fontSize: 11, color: C.tm }}>{jidToPhone(activeJid)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{activeChat ? chatTitle(activeChat) : activeJid}</div>
+                  <div style={{ fontSize: 11, color: C.tm }}>{activeJid}</div>
                 </div>
               </div>
 
