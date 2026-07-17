@@ -25,6 +25,12 @@ const stateColor: Record<ConnState, string> = {
 // -----------------------------------------------------------------------------
 interface Chat {
   remoteJid: string;
+  // Evolution/Baileys às vezes trazem o número real num campo alternativo quando
+  // o remoteJid é um @lid opaco (dispositivo vinculado). Consultamos todos eles.
+  remoteJidAlt?: string;
+  senderPn?: string;
+  owner?: string;
+  jid?: string;
   pushName?: string;
   name?: string;
   profilePicUrl?: string;
@@ -33,7 +39,13 @@ interface Chat {
 }
 
 interface EvoMessage {
-  key: { id: string; remoteJid: string; fromMe: boolean };
+  key: {
+    id: string;
+    remoteJid: string;
+    remoteJidAlt?: string;
+    senderPn?: string;
+    fromMe: boolean;
+  };
   message?: any;
   messageTimestamp?: number;
   pushName?: string;
@@ -45,10 +57,23 @@ interface EvoMessage {
 // Número puro (só dígitos), sem sufixo @s.whatsapp.net / @c.us — usado para
 // agrupar e comparar contatos, já que o Evolution varia o sufixo do JID entre
 // mensagens enviadas e recebidas.
-const jidToPhone = (jid: string) => (jid || "").replace(/[@:].*/, "").replace(/\D/g, "");
-const isGroup = (jid: string) => (jid || "").endsWith("@g.us");
+const jidToPhone = (jid?: string) => (jid || "").replace(/[@:].*/, "").replace(/\D/g, "");
+const isGroup = (jid?: string) => (jid || "").endsWith("@g.us");
+const isLid = (jid?: string) => (jid || "").endsWith("@lid");
 
-const chatTitle = (c: Chat) => c.name || c.pushName || jidToPhone(c.remoteJid);
+// Número canônico do contato. Um @lid é um identificador opaco (dispositivo
+// vinculado) que NÃO é o telefone real, então preferimos qualquer campo
+// alternativo que contenha o número de verdade. Se só houver o @lid, usamos ele
+// mesmo como chave — melhor agrupar por algo estável do que espalhar a conversa.
+const chatPhone = (c: {
+  remoteJid?: string; remoteJidAlt?: string; senderPn?: string; owner?: string; jid?: string;
+}) => {
+  const candidates = [c.remoteJidAlt, c.senderPn, c.jid, c.owner, c.remoteJid];
+  const real = candidates.find(v => v && !isLid(v) && jidToPhone(v).length >= 8);
+  return jidToPhone(real || c.remoteJid);
+};
+
+const chatTitle = (c: Chat) => c.name || c.pushName || chatPhone(c);
 
 function extractText(m: any): string {
   if (!m) return "";
@@ -148,18 +173,24 @@ export function WhatsApp() {
     setLoadingChats(true);
     try {
       const raw = await api<Chat[]>(`/evolution/chat/findChats/${INSTANCE}`, { method: "POST", body: {}, token: token! });
+      // DEBUG: inspeciona o formato bruto (remover depois de resolver o @lid)
+      console.log("[WA] findChats RAW:", raw);
       // Desduplica por número: o Evolution pode retornar o mesmo contato com
       // sufixos de JID diferentes (@s.whatsapp.net / @c.us). Mantém o chat com
       // a mensagem mais recente e descarta os duplicados.
       const byPhone = new Map<string, Chat>();
       for (const c of Array.isArray(raw) ? raw : []) {
         if (!c.remoteJid || isGroup(c.remoteJid) || c.remoteJid === "status@broadcast") continue;
-        const phone = jidToPhone(c.remoteJid);
+        const phone = chatPhone(c);
         if (!phone) continue;
         const prev = byPhone.get(phone);
         const t = c.lastMessage?.messageTimestamp || 0;
         const tPrev = prev?.lastMessage?.messageTimestamp || 0;
-        if (!prev || t >= tPrev) byPhone.set(phone, c);
+        // Mantém o chat mais recente, mas prefere o que tem número real (não @lid)
+        // como "dono" da entrada para o título/avatar ficarem corretos.
+        const prevIsLid = prev ? isLid(prev.remoteJid) : true;
+        const curIsLid = isLid(c.remoteJid);
+        if (!prev || t >= tPrev || (prevIsLid && !curIsLid)) byPhone.set(phone, c);
       }
       const list = [...byPhone.values()].sort((a, b) =>
         (b.lastMessage?.messageTimestamp || 0) - (a.lastMessage?.messageTimestamp || 0));
@@ -175,12 +206,17 @@ export function WhatsApp() {
     if (state === "open") loadChats();
   }, [state, loadChats]);
 
-  // Recebe o NÚMERO (não o JID). Busca por ambos os sufixos e mescla, para
-  // reunir mensagens enviadas e recebidas do mesmo contato numa só conversa.
-  const loadMessages = useCallback(async (phone: string) => {
+  // Reúne enviadas + recebidas numa só conversa. As enviadas ficam sob o número
+  // real (@s.whatsapp.net / @c.us); as recebidas de dispositivo vinculado ficam
+  // sob o @lid. Buscamos TODOS os JIDs conhecidos do contato e mesclamos.
+  const loadMessages = useCallback(async (phone: string, extraJids: string[] = []) => {
     setLoadingMsgs(true);
     try {
-      const jids = [`${phone}@s.whatsapp.net`, `${phone}@c.us`];
+      const jids = Array.from(new Set([
+        `${phone}@s.whatsapp.net`,
+        `${phone}@c.us`,
+        ...extraJids.filter(Boolean),
+      ]));
       const results = await Promise.all(jids.map(jid =>
         api<{ messages?: { records?: EvoMessage[] } } | EvoMessage[]>(
           `/evolution/chat/findMessages/${INSTANCE}`,
@@ -207,19 +243,32 @@ export function WhatsApp() {
     }
   }, [token]);
 
-  const openChat = (jid: string) => {
-    const phone = jidToPhone(jid);
+  // JIDs "extras" do contato ativo além do número puro — inclui o @lid e demais
+  // variantes que o Evolution possa ter guardado, para não perder mensagens.
+  const activeExtraJids = useCallback((phone: string) => {
+    const jids = new Set<string>();
+    for (const c of chats) {
+      if (chatPhone(c) !== phone) continue;
+      for (const v of [c.remoteJid, c.remoteJidAlt, c.senderPn, c.jid]) {
+        if (v && v.includes("@")) jids.add(v);
+      }
+    }
+    return [...jids];
+  }, [chats]);
+
+  const openChat = (c: Chat) => {
+    const phone = chatPhone(c);
     setActiveJid(phone);
     setMessages([]);
-    loadMessages(phone);
+    loadMessages(phone, activeExtraJids(phone));
   };
 
   // Auto-refresh das mensagens do chat aberto a cada 8s
   useEffect(() => {
     if (!activeJid || state !== "open") return;
-    const t = setInterval(() => loadMessages(activeJid), 8000);
+    const t = setInterval(() => loadMessages(activeJid, activeExtraJids(activeJid)), 8000);
     return () => clearInterval(t);
-  }, [activeJid, state, loadMessages]);
+  }, [activeJid, state, loadMessages, activeExtraJids]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -235,7 +284,7 @@ export function WhatsApp() {
       });
       setDraft("");
       // Otimista: recarrega em seguida
-      setTimeout(() => loadMessages(activeJid), 600);
+      setTimeout(() => loadMessages(activeJid, activeExtraJids(activeJid)), 600);
     } catch (e) {
       setToast({ msg: "Falha ao enviar: " + (e as Error).message, type: "error" });
     } finally {
@@ -245,9 +294,9 @@ export function WhatsApp() {
 
   const filteredChats = chats.filter(c =>
     chatTitle(c).toLowerCase().includes(search.toLowerCase()) ||
-    jidToPhone(c.remoteJid).includes(search));
+    chatPhone(c).includes(search));
 
-  const activeChat = chats.find(c => jidToPhone(c.remoteJid) === activeJid);
+  const activeChat = chats.find(c => chatPhone(c) === activeJid);
 
   // ---------------------------------------------------------------------------
   // Render: DESCONECTADO → QR
@@ -345,12 +394,12 @@ export function WhatsApp() {
               <div style={{ padding: 20, textAlign: "center", color: C.tm, fontSize: 12 }}>Nenhuma conversa ainda</div>
             )}
             {filteredChats.map(c => {
-              const active = jidToPhone(c.remoteJid) === activeJid;
+              const active = chatPhone(c) === activeJid;
               const last = extractText(c.lastMessage?.message);
               return (
                 <div
                   key={c.remoteJid}
-                  onClick={() => openChat(c.remoteJid)}
+                  onClick={() => openChat(c)}
                   style={{
                     padding: "11px 14px",
                     cursor: "pointer",
