@@ -43,7 +43,9 @@ export class TemplatesService {
   /**
    * Renderiza variáveis no body do template.
    * Variáveis suportadas: {{cliente}}, {{medicamento}}, {{dias}}, {{data_fim}}
-   * Suporte a bloco condicional: {{#cliente}} ... {{/cliente}}
+   *
+   * Quando o cliente não tem nome cadastrado, o {{cliente}} é removido junto
+   * com o espaço extra ao redor, para não gerar "Olá !" com espaço sobrando.
    */
   renderBody(
     body: string,
@@ -51,14 +53,11 @@ export class TemplatesService {
   ): string {
     let result = body;
 
-    // Blocos condicionais: {{#var}}conteudo{{/var}}
-    result = result.replace(
-      /\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g,
-      (_, key: string, content: string) => {
-        const val = vars[key as keyof typeof vars];
-        return val !== undefined && val !== null && val !== '' ? content : '';
-      },
-    );
+    // {{cliente}} vazio: remove a variável e um espaço adjacente (ex: "Olá {{cliente}}!" => "Olá!")
+    const nome = vars.cliente?.trim();
+    if (!nome) {
+      result = result.replace(/ ?\{\{cliente\}\}/g, '');
+    }
 
     // Variáveis simples
     result = result.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {

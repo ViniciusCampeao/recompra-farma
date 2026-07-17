@@ -90,13 +90,14 @@ function TplModal({
             style={{ ...inp, minHeight: 160, lineHeight: 1.7, fontFamily: "monospace", fontSize: 12 }}
             value={f.body}
             onChange={s("body")}
-            placeholder={"Olá {{#cliente}} {{cliente}}{{/cliente}}!\n\nSeu medicamento {{medicamento}} termina em {{dias}} dias."}
+            placeholder={"Olá {{cliente}}!\n\nSeu medicamento {{medicamento}} termina em {{dias}} dias."}
           />
-          <div style={{ fontSize: 11, color: C.tm, marginTop: 6 }}>
-            Variáveis: <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{cliente}}"}</code>{" "}
-            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{medicamento}}"}</code>{" "}
-            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{dias}}"}</code>{" "}
-            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{data_fim}}"}</code>
+          <div style={{ fontSize: 11, color: C.tm, marginTop: 8, lineHeight: 1.9 }}>
+            Use estas etiquetas — elas são trocadas automaticamente na hora do envio:<br />
+            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{cliente}}"}</code> nome do cliente{" · "}
+            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{medicamento}}"}</code> remédio{" · "}
+            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{dias}}"}</code> dias restantes{" · "}
+            <code style={{ background: C.sa, padding: "1px 5px", borderRadius: 3 }}>{"{{data_fim}}"}</code> data de término
           </div>
         </Field>
         <div style={{ display: "flex", gap: 20 }}>

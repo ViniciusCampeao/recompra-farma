@@ -29,7 +29,7 @@ async function main() {
       type: ReminderType.ADVANCE,
       isDefault: true,
       body: [
-        'Olá{{#cliente}} {{cliente}}{{/cliente}}! 😊',
+        'Olá {{cliente}}! 😊',
         '',
         'Percebemos que seu medicamento {{medicamento}} deverá acabar em aproximadamente {{dias}} dias.',
         '',
@@ -47,7 +47,7 @@ async function main() {
       type: ReminderType.FINAL_DAY,
       isDefault: true,
       body: [
-        'Olá{{#cliente}} {{cliente}}{{/cliente}}!',
+        'Olá {{cliente}}!',
         '',
         'Seu tratamento com {{medicamento}} provavelmente chegou ao fim hoje.',
         '',

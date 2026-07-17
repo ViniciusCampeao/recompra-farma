@@ -106,12 +106,16 @@ function SendTestModal({ open, onClose, customer }: { open: boolean; onClose: ()
     if (t) setBody(renderPreview(t.body, customer?.name));
   };
 
-  const renderPreview = (b: string, nome?: string) =>
-    b.replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, k, c) => (k === "cliente" && nome) ? c : "")
-     .replace(/\{\{cliente\}\}/g, nome || "")
+  const renderPreview = (b: string, nome?: string) => {
+    const n = nome?.trim();
+    return (n
+      ? b.replace(/\{\{cliente\}\}/g, n)
+      : b.replace(/ ?\{\{cliente\}\}/g, ""))
      .replace(/\{\{medicamento\}\}/g, "[ medicamento ]")
      .replace(/\{\{dias\}\}/g, "[ dias ]")
-     .replace(/\{\{data_fim\}\}/g, "[ data ]");
+     .replace(/\{\{data_fim\}\}/g, "[ data ]")
+     .trim();
+  };
 
   useEffect(() => {
     if (tplId) {
