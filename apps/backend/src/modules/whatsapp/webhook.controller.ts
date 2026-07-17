@@ -54,7 +54,15 @@ export class WebhookController {
       const remoteJid = msg.key?.remoteJid;
       if (!remoteJid || remoteJid.endsWith('@g.us')) return; // ignora grupos
 
-      const phone = phoneFromJid(remoteJid);
+      // Quando a mensagem vem de dispositivo vinculado, o remoteJid é um @lid
+      // opaco (não o telefone). Nesse caso, o número real vem no remoteJidAlt
+      // (ou senderPn). Preferimos o campo com telefone real para não bagunçar
+      // o histórico com um número inventado.
+      const jidForPhone = remoteJid.endsWith('@lid')
+        ? (msg.key?.remoteJidAlt ?? msg.key?.senderPn ?? remoteJid)
+        : remoteJid;
+
+      const phone = phoneFromJid(jidForPhone);
       const text =
         msg.message?.conversation ??
         msg.message?.extendedTextMessage?.text ??

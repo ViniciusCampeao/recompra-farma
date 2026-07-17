@@ -21,84 +21,49 @@ const stateColor: Record<ConnState, string> = {
 };
 
 // -----------------------------------------------------------------------------
-// Tipos das respostas do Evolution API
+// Tipos — vindos do backend (MessageLog), não do Evolution.
+// O backend já normaliza o telefone (E.164) e unifica enviadas + recebidas,
+// então não lidamos com os JIDs @lid opacos aqui.
 // -----------------------------------------------------------------------------
-interface Chat {
-  remoteJid: string;
-  // Evolution/Baileys às vezes trazem o número real num campo alternativo quando
-  // o remoteJid é um @lid opaco (dispositivo vinculado). Consultamos todos eles.
-  remoteJidAlt?: string;
-  senderPn?: string;
-  owner?: string;
-  jid?: string;
-  pushName?: string;
-  name?: string;
-  profilePicUrl?: string;
-  lastMessage?: { message?: any; messageTimestamp?: number };
-  updatedAt?: string;
+interface Conversation {
+  phone: string;
+  count: number;
+  name: string | null;
+  customerId: string | null;
+  lastBody: string;
+  lastDirection: "INBOUND" | "OUTBOUND";
+  lastAt: string | null;
 }
 
-interface EvoMessage {
-  key: {
-    id: string;
-    remoteJid: string;
-    remoteJidAlt?: string;
-    senderPn?: string;
-    fromMe: boolean;
-  };
-  message?: any;
-  messageTimestamp?: number;
-  pushName?: string;
+interface Message {
+  id: string;
+  phone: string;
+  body: string;
+  direction: "INBOUND" | "OUTBOUND";
+  status: string;
+  createdAt: string;
+  customer?: { id: string; name?: string; phone: string } | null;
 }
 
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-// Número puro (só dígitos), sem sufixo @s.whatsapp.net / @c.us — usado para
-// agrupar e comparar contatos, já que o Evolution varia o sufixo do JID entre
-// mensagens enviadas e recebidas.
-const jidToPhone = (jid?: string) => (jid || "").replace(/[@:].*/, "").replace(/\D/g, "");
-const isGroup = (jid?: string) => (jid || "").endsWith("@g.us");
-const isLid = (jid?: string) => (jid || "").endsWith("@lid");
-
-// Número canônico do contato. Um @lid é um identificador opaco (dispositivo
-// vinculado) que NÃO é o telefone real, então preferimos qualquer campo
-// alternativo que contenha o número de verdade. Se só houver o @lid, usamos ele
-// mesmo como chave — melhor agrupar por algo estável do que espalhar a conversa.
-const chatPhone = (c: {
-  remoteJid?: string; remoteJidAlt?: string; senderPn?: string; owner?: string; jid?: string;
-}) => {
-  const candidates = [c.remoteJidAlt, c.senderPn, c.jid, c.owner, c.remoteJid];
-  const real = candidates.find(v => v && !isLid(v) && jidToPhone(v).length >= 8);
-  return jidToPhone(real || c.remoteJid);
+// Formata E.164 BR ("5514999660536") para "(14) 99966-0536".
+const fmtPhone = (e164: string) => {
+  const d = (e164 || "").replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("55")) return `(${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
+  if (d.length === 12 && d.startsWith("55")) return `(${d.slice(2, 4)}) ${d.slice(4, 8)}-${d.slice(8)}`;
+  return e164;
 };
+const convTitle = (c: Conversation) => c.name || fmtPhone(c.phone);
 
-const chatTitle = (c: Chat) => c.name || c.pushName || chatPhone(c);
-
-function extractText(m: any): string {
-  if (!m) return "";
-  return (
-    m.conversation ||
-    m.extendedTextMessage?.text ||
-    m.imageMessage?.caption ||
-    m.videoMessage?.caption ||
-    (m.imageMessage ? "📷 Imagem" : "") ||
-    (m.videoMessage ? "🎥 Vídeo" : "") ||
-    (m.audioMessage ? "🎵 Áudio" : "") ||
-    (m.documentMessage ? "📄 Documento" : "") ||
-    (m.stickerMessage ? "Figurinha" : "") ||
-    ""
-  );
-}
-
-const fmtTime = (ts?: number) => {
-  if (!ts) return "";
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const fmtTime = (iso?: string | null) => {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 };
-const fmtDate = (ts?: number) => {
-  if (!ts) return "";
-  const d = new Date(ts * 1000);
+const fmtDate = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
   const today = new Date();
   if (d.toDateString() === today.toDateString()) return "Hoje";
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -111,10 +76,10 @@ export function WhatsApp() {
   const [qr, setQr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [activeJid, setActiveJid] = useState<string | null>(null);
-  const [messages, setMessages] = useState<EvoMessage[]>([]);
-  const [loadingChats, setLoadingChats] = useState(false);
+  const [convs, setConvs] = useState<Conversation[]>([]);
+  const [activePhone, setActivePhone] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingConvs, setLoadingConvs] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -124,6 +89,10 @@ export function WhatsApp() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // --- Conexão --------------------------------------------------------------
+  const stopQrPoll = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
   const fetchState = useCallback(async () => {
     try {
       const d = await api<{ instance?: { state?: string }; state?: string }>(
@@ -135,10 +104,6 @@ export function WhatsApp() {
       setState("error");
     }
   }, [token]);
-
-  const stopQrPoll = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  };
 
   useEffect(() => { fetchState(); return () => stopQrPoll(); }, [fetchState]);
 
@@ -162,79 +127,36 @@ export function WhatsApp() {
   const disconnect = async () => {
     try {
       await api(`/evolution/instance/logout/${INSTANCE}`, { method: "DELETE", token: token! });
-      setState("disconnected"); setChats([]); setActiveJid(null); setMessages([]);
+      setState("disconnected"); setConvs([]); setActivePhone(null); setMessages([]);
       setToast({ msg: "Desconectado com sucesso" });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); }
   };
 
-  // --- Conversas ------------------------------------------------------------
-  const loadChats = useCallback(async () => {
-    if (state !== "open") return;
-    setLoadingChats(true);
+  // --- Conversas (do banco) -------------------------------------------------
+  const loadConvs = useCallback(async () => {
+    setLoadingConvs(true);
     try {
-      const raw = await api<Chat[]>(`/evolution/chat/findChats/${INSTANCE}`, { method: "POST", body: {}, token: token! });
-      // DEBUG: inspeciona o formato bruto (remover depois de resolver o @lid)
-      console.log("[WA] findChats RAW:", raw);
-      // Desduplica por número: o Evolution pode retornar o mesmo contato com
-      // sufixos de JID diferentes (@s.whatsapp.net / @c.us). Mantém o chat com
-      // a mensagem mais recente e descarta os duplicados.
-      const byPhone = new Map<string, Chat>();
-      for (const c of Array.isArray(raw) ? raw : []) {
-        if (!c.remoteJid || isGroup(c.remoteJid) || c.remoteJid === "status@broadcast") continue;
-        const phone = chatPhone(c);
-        if (!phone) continue;
-        const prev = byPhone.get(phone);
-        const t = c.lastMessage?.messageTimestamp || 0;
-        const tPrev = prev?.lastMessage?.messageTimestamp || 0;
-        // Mantém o chat mais recente, mas prefere o que tem número real (não @lid)
-        // como "dono" da entrada para o título/avatar ficarem corretos.
-        const prevIsLid = prev ? isLid(prev.remoteJid) : true;
-        const curIsLid = isLid(c.remoteJid);
-        if (!prev || t >= tPrev || (prevIsLid && !curIsLid)) byPhone.set(phone, c);
-      }
-      const list = [...byPhone.values()].sort((a, b) =>
-        (b.lastMessage?.messageTimestamp || 0) - (a.lastMessage?.messageTimestamp || 0));
-      setChats(list);
+      const list = await api<Conversation[]>("/messages/conversations", { token: token! });
+      setConvs(Array.isArray(list) ? list : []);
     } catch (e) {
       setToast({ msg: "Falha ao carregar conversas: " + (e as Error).message, type: "error" });
     } finally {
-      setLoadingChats(false);
+      setLoadingConvs(false);
     }
-  }, [state, token]);
+  }, [token]);
 
   useEffect(() => {
-    if (state === "open") loadChats();
-  }, [state, loadChats]);
+    if (state !== "open") return;
+    loadConvs();
+    const t = setInterval(loadConvs, 15000);
+    return () => clearInterval(t);
+  }, [state, loadConvs]);
 
-  // Reúne enviadas + recebidas numa só conversa. As enviadas ficam sob o número
-  // real (@s.whatsapp.net / @c.us); as recebidas de dispositivo vinculado ficam
-  // sob o @lid. Buscamos TODOS os JIDs conhecidos do contato e mesclamos.
-  const loadMessages = useCallback(async (phone: string, extraJids: string[] = []) => {
+  const loadMessages = useCallback(async (phone: string) => {
     setLoadingMsgs(true);
     try {
-      const jids = Array.from(new Set([
-        `${phone}@s.whatsapp.net`,
-        `${phone}@c.us`,
-        ...extraJids.filter(Boolean),
-      ]));
-      const results = await Promise.all(jids.map(jid =>
-        api<{ messages?: { records?: EvoMessage[] } } | EvoMessage[]>(
-          `/evolution/chat/findMessages/${INSTANCE}`,
-          { method: "POST", body: { where: { key: { remoteJid: jid } } }, token: token! })
-          .then(r => (Array.isArray(r) ? r : (r?.messages?.records || [])))
-          .catch(() => [] as EvoMessage[])
-      ));
-      // Mescla e desduplica por id da mensagem
-      const seen = new Set<string>();
-      const merged: EvoMessage[] = [];
-      for (const rec of results.flat()) {
-        const id = rec.key?.id;
-        if (id && seen.has(id)) continue;
-        if (id) seen.add(id);
-        merged.push(rec);
-      }
-      merged.sort((a, b) => (a.messageTimestamp || 0) - (b.messageTimestamp || 0));
-      setMessages(merged);
+      const list = await api<Message[]>(`/messages?phone=${encodeURIComponent(phone)}`, { token: token! });
+      setMessages(Array.isArray(list) ? list : []);
     } catch (e) {
       setToast({ msg: "Falha ao carregar mensagens: " + (e as Error).message, type: "error" });
       setMessages([]);
@@ -243,48 +165,35 @@ export function WhatsApp() {
     }
   }, [token]);
 
-  // JIDs "extras" do contato ativo além do número puro — inclui o @lid e demais
-  // variantes que o Evolution possa ter guardado, para não perder mensagens.
-  const activeExtraJids = useCallback((phone: string) => {
-    const jids = new Set<string>();
-    for (const c of chats) {
-      if (chatPhone(c) !== phone) continue;
-      for (const v of [c.remoteJid, c.remoteJidAlt, c.senderPn, c.jid]) {
-        if (v && v.includes("@")) jids.add(v);
-      }
-    }
-    return [...jids];
-  }, [chats]);
-
-  const openChat = (c: Chat) => {
-    const phone = chatPhone(c);
-    setActiveJid(phone);
+  const openChat = (phone: string) => {
+    setActivePhone(phone);
     setMessages([]);
-    loadMessages(phone, activeExtraJids(phone));
+    loadMessages(phone);
   };
 
   // Auto-refresh das mensagens do chat aberto a cada 8s
   useEffect(() => {
-    if (!activeJid || state !== "open") return;
-    const t = setInterval(() => loadMessages(activeJid, activeExtraJids(activeJid)), 8000);
+    if (!activePhone || state !== "open") return;
+    const t = setInterval(() => loadMessages(activePhone), 8000);
     return () => clearInterval(t);
-  }, [activeJid, state, loadMessages, activeExtraJids]);
+  }, [activePhone, state, loadMessages]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || !activeJid || sending) return;
+    if (!text || !activePhone || sending) return;
     setSending(true);
     try {
-      await api(`/evolution/message/sendText/${INSTANCE}`, {
+      const log = await api<Message>("/messages/send", {
         method: "POST",
-        body: { number: activeJid, text },
+        body: { phone: activePhone, text },
         token: token!,
       });
       setDraft("");
-      // Otimista: recarrega em seguida
-      setTimeout(() => loadMessages(activeJid, activeExtraJids(activeJid)), 600);
+      // Otimista: acrescenta na hora e recarrega em seguida
+      setMessages(m => [...m, log]);
+      loadConvs();
     } catch (e) {
       setToast({ msg: "Falha ao enviar: " + (e as Error).message, type: "error" });
     } finally {
@@ -292,11 +201,11 @@ export function WhatsApp() {
     }
   };
 
-  const filteredChats = chats.filter(c =>
-    chatTitle(c).toLowerCase().includes(search.toLowerCase()) ||
-    chatPhone(c).includes(search));
+  const filteredConvs = convs.filter(c =>
+    convTitle(c).toLowerCase().includes(search.toLowerCase()) ||
+    c.phone.includes(search.replace(/\D/g, "")));
 
-  const activeChat = chats.find(c => chatPhone(c) === activeJid);
+  const activeConv = convs.find(c => c.phone === activePhone);
 
   // ---------------------------------------------------------------------------
   // Render: DESCONECTADO → QR
@@ -363,7 +272,7 @@ export function WhatsApp() {
           <Badge color={C.ok}>Conectado</Badge>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={loadChats} style={{ ...btn, background: C.sa, color: C.tm }}>
+          <button onClick={loadConvs} style={{ ...btn, background: C.sa, color: C.tm }}>
             <Icon name="ref" size={15} />Atualizar
           </button>
           <button onClick={disconnect} style={{ ...btn, background: C.dn + "12", color: C.dn }}>
@@ -387,19 +296,18 @@ export function WhatsApp() {
             </span>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {loadingChats && chats.length === 0 && (
+            {loadingConvs && convs.length === 0 && (
               <div style={{ padding: 20, textAlign: "center", color: C.tm, fontSize: 12 }}>Carregando conversas...</div>
             )}
-            {!loadingChats && chats.length === 0 && (
+            {!loadingConvs && convs.length === 0 && (
               <div style={{ padding: 20, textAlign: "center", color: C.tm, fontSize: 12 }}>Nenhuma conversa ainda</div>
             )}
-            {filteredChats.map(c => {
-              const active = chatPhone(c) === activeJid;
-              const last = extractText(c.lastMessage?.message);
+            {filteredConvs.map(c => {
+              const active = c.phone === activePhone;
               return (
                 <div
-                  key={c.remoteJid}
-                  onClick={() => openChat(c)}
+                  key={c.phone}
+                  onClick={() => openChat(c.phone)}
                   style={{
                     padding: "11px 14px",
                     cursor: "pointer",
@@ -414,21 +322,19 @@ export function WhatsApp() {
                     background: C.sa, display: "flex", alignItems: "center", justifyContent: "center",
                     color: C.tm, fontWeight: 700, fontSize: 13, overflow: "hidden",
                   }}>
-                    {c.profilePicUrl
-                      ? <img src={c.profilePicUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      : chatTitle(c).charAt(0).toUpperCase()}
+                    {convTitle(c).charAt(0).toUpperCase()}
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {chatTitle(c)}
+                        {convTitle(c)}
                       </span>
                       <span style={{ fontSize: 10, color: C.tm, flexShrink: 0 }}>
-                        {fmtDate(c.lastMessage?.messageTimestamp)}
+                        {fmtDate(c.lastAt)}
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: C.tm, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
-                      {last || "—"}
+                      {c.lastDirection === "OUTBOUND" ? "Você: " : ""}{c.lastBody || "—"}
                     </div>
                   </div>
                 </div>
@@ -439,7 +345,7 @@ export function WhatsApp() {
 
         {/* --- Conversa --- */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.bg }}>
-          {!activeJid ? (
+          {!activePhone ? (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.tm, gap: 10 }}>
               <Icon name="chat" size={40} />
               <span style={{ fontSize: 13 }}>Selecione uma conversa para ver as mensagens</span>
@@ -452,11 +358,11 @@ export function WhatsApp() {
                   width: 34, height: 34, borderRadius: "50%", background: C.sa,
                   display: "flex", alignItems: "center", justifyContent: "center", color: C.tm, fontWeight: 700, fontSize: 12,
                 }}>
-                  {activeChat ? chatTitle(activeChat).charAt(0).toUpperCase() : "?"}
+                  {(activeConv ? convTitle(activeConv) : fmtPhone(activePhone)).charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{activeChat ? chatTitle(activeChat) : activeJid}</div>
-                  <div style={{ fontSize: 11, color: C.tm }}>{activeJid}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{activeConv ? convTitle(activeConv) : fmtPhone(activePhone)}</div>
+                  <div style={{ fontSize: 11, color: C.tm }}>{fmtPhone(activePhone)}</div>
                 </div>
               </div>
 
@@ -469,11 +375,9 @@ export function WhatsApp() {
                   <div style={{ textAlign: "center", color: C.tm, fontSize: 12, padding: 20 }}>Sem mensagens nesta conversa</div>
                 )}
                 {messages.map(m => {
-                  const out = m.key?.fromMe;
-                  const text = extractText(m.message);
-                  if (!text) return null;
+                  const out = m.direction === "OUTBOUND";
                   return (
-                    <div key={m.key.id} style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start" }}>
+                    <div key={m.id} style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start" }}>
                       <div style={{
                         maxWidth: "70%",
                         background: out ? C.pr : C.sf,
@@ -483,9 +387,12 @@ export function WhatsApp() {
                         padding: "8px 12px",
                         boxShadow: "0 1px 2px rgba(0,0,0,.05)",
                       }}>
-                        <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{text}</div>
-                        <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: "right" }}>
-                          {fmtTime(m.messageTimestamp)}
+                        <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.body}</div>
+                        <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: "right", display: "flex", gap: 5, justifyContent: "flex-end", alignItems: "center" }}>
+                          {fmtTime(m.createdAt)}
+                          {out && (
+                            <Icon name={m.status === "FAILED" ? "clock" : "check"} size={11} />
+                          )}
                         </div>
                       </div>
                     </div>
