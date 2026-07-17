@@ -11,7 +11,6 @@ const nav: NavItem[] = [
   { k: "purch",    l: "Compras",      i: "cart" },
   { k: "tpl",      l: "Templates",    i: "tpl" },
   { k: "whatsapp", l: "WhatsApp",     i: "whatsapp" },
-  { k: "msgs",     l: "Mensagens",    i: "chat" },
   { k: "settings", l: "Configurações",i: "gear" },
   { k: "users",    l: "Usuários",     i: "userplus", adminOnly: true },
 ];

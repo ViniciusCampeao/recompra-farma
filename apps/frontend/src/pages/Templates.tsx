@@ -25,22 +25,20 @@ const typeColor: Record<string, string> = { ADVANCE: C.pr, FINAL_DAY: C.wn };
 function TplModal({
   open, onClose, onOk, editing,
 }: {
-  open: boolean; onClose: () => void; onOk: () => void; editing?: Template | null;
+  open: boolean; onClose: () => void; onOk: () => void; editing: Template | null;
 }) {
   const { token } = useAuth();
-  const [f, setF] = useState({ name: "", key: "", type: "ADVANCE", body: "", isDefault: false, active: true });
+  const [f, setF] = useState({ name: "", body: "", isDefault: false, active: true });
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open) {
+    if (open && editing) {
       setF({
-        name: editing?.name || "",
-        key: editing?.key || "",
-        type: editing?.type || "ADVANCE",
-        body: editing?.body || "",
-        isDefault: editing?.isDefault ?? false,
-        active: editing?.active ?? true,
+        name: editing.name || "",
+        body: editing.body || "",
+        isDefault: editing.isDefault ?? false,
+        active: editing.active ?? true,
       });
       setErr("");
     }
@@ -52,39 +50,22 @@ function TplModal({
   };
 
   const go = async () => {
+    if (!editing) return;
     if (!f.name.trim() || !f.body.trim()) { setErr("Nome e mensagem são obrigatórios"); return; }
-    if (!editing && !f.key.trim()) { setErr("Chave obrigatória"); return; }
     setErr(""); setLoading(true);
     try {
-      if (editing) {
-        await api(`/templates/${editing.id}`, { method: "PATCH", body: { name: f.name, body: f.body, isDefault: f.isDefault, active: f.active }, token: token! });
-      } else {
-        await api("/templates", { method: "POST", body: { name: f.name, key: f.key, type: f.type, body: f.body, isDefault: f.isDefault }, token: token! });
-      }
+      await api(`/templates/${editing.id}`, { method: "PATCH", body: { name: f.name, body: f.body, isDefault: f.isDefault, active: f.active }, token: token! });
       onOk();
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? "Editar template" : "Novo template"} width={600}>
+    <Modal open={open} onClose={onClose} title="Editar template" width={600}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Field label="Nome">
           <input style={inp} value={f.name} onChange={s("name")} placeholder="Aviso antecipado personalizado" />
         </Field>
-        {!editing && (
-          <>
-            <Field label="Chave (identificador único)">
-              <input style={inp} value={f.key} onChange={s("key")} placeholder="advance_custom_1" />
-            </Field>
-            <Field label="Tipo">
-              <select style={{ ...inp, appearance: "none" }} value={f.type} onChange={s("type")}>
-                <option value="ADVANCE">Antecipado</option>
-                <option value="FINAL_DAY">Último dia</option>
-              </select>
-            </Field>
-          </>
-        )}
         <Field label="Mensagem">
           <textarea
             style={{ ...inp, minHeight: 160, lineHeight: 1.7, fontFamily: "monospace", fontSize: 12 }}
@@ -105,16 +86,14 @@ function TplModal({
             <input type="checkbox" checked={f.isDefault} onChange={s("isDefault")} />
             Padrão para o tipo
           </label>
-          {editing && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={f.active} onChange={s("active")} />
-              Ativo
-            </label>
-          )}
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.active} onChange={s("active")} />
+            Ativo
+          </label>
         </div>
         {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: C.dn + "12", borderRadius: 6 }}>{err}</div>}
         <button onClick={go} disabled={loading} style={{ ...btn, justifyContent: "center", background: C.pr, color: "#fff" }}>
-          {loading ? "Salvando..." : editing ? "Salvar alterações" : "Criar template"}
+          {loading ? "Salvando..." : "Salvar alterações"}
         </button>
       </div>
     </Modal>
@@ -159,11 +138,7 @@ export function Templates() {
 
   return (
     <div>
-      <PageHeader title="Templates" action={
-        <button onClick={() => { setEditing(null); setModal(true); }} style={{ ...btn, background: C.pr, color: "#fff" }}>
-          <Icon name="plus" size={16} />Novo template
-        </button>
-      } />
+      <PageHeader title="Templates" />
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {ts.length === 0
           ? <Card><p style={{ color: C.tm, textAlign: "center", fontSize: 13 }}>Nenhum template cadastrado</p></Card>
@@ -194,7 +169,7 @@ export function Templates() {
         open={modal}
         onClose={() => setModal(false)}
         editing={editing}
-        onOk={() => { load(); setModal(false); setToast({ msg: editing ? "Template atualizado" : "Template criado" }); }}
+        onOk={() => { load(); setModal(false); setToast({ msg: "Template atualizado" }); }}
       />
       <ConfirmModal
         open={!!deleting}

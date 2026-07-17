@@ -148,6 +148,30 @@ export class PurchasesService {
     });
   }
 
+  /**
+   * Lembretes agendados para HOJE (00:00–23:59 no fuso do servidor), com o
+   * cliente e o medicamento. Usado no Painel.
+   */
+  async remindersToday() {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    return this.prisma.scheduledReminder.findMany({
+      where: { scheduledFor: { gte: start, lt: end } },
+      orderBy: { scheduledFor: 'asc' },
+      include: {
+        purchase: {
+          select: {
+            medicationName: true,
+            customer: { select: { name: true, phone: true } },
+          },
+        },
+      },
+    });
+  }
+
   async findOne(id: string) {
     const purchase = await this.prisma.purchase.findUnique({
       where: { id },

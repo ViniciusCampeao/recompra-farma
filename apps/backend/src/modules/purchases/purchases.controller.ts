@@ -40,6 +40,12 @@ export class PurchasesController {
     return this.service.findAll(customerId);
   }
 
+  /** Lembretes agendados para hoje (pendentes + já enviados). */
+  @Get('reminders/today')
+  remindersToday() {
+    return this.service.remindersToday();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
