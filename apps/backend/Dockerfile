@@ -22,7 +22,8 @@ RUN npx tsc prisma/seed.ts --outDir dist/seed --module commonjs --target ES2022 
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+ENV TZ=America/Sao_Paulo
+RUN apt-get update -y && apt-get install -y openssl tzdata && rm -rf /var/lib/apt/lists/*
 COPY apps/backend/package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Post,
   Query,
@@ -138,5 +139,18 @@ export class MessagesController {
     }
 
     return log;
+  }
+
+  /**
+   * Apaga o histórico de conversas do banco (MessageLog). Usado antes de
+   * desconectar a conta do WhatsApp, para não deixar conversas de um número
+   * que não estará mais vinculado. Se `phone` for informado, apaga só daquele
+   * contato; senão, apaga tudo.
+   */
+  @Delete()
+  async wipe(@Query('phone') phone?: string) {
+    const where = phone ? { phone: normalizePhone(phone) } : {};
+    const { count } = await this.prisma.messageLog.deleteMany({ where });
+    return { deleted: count };
   }
 }

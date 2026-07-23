@@ -9,21 +9,60 @@ import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
 import { PageHeader, TH, TD } from "../components/ui/PageHeader";
 
+interface Reminder {
+  status: string;
+  scheduledFor?: string;
+  sentAt?: string | null;
+  type?: string;
+}
 interface Purchase {
   id: string;
   medicationName: string;
   quantity: number;
   unit: string;
+  dosePerDay?: number;
+  treatmentDays?: number;
+  purchaseDate?: string;
   estimatedEndDate?: string;
   status: "ACTIVE" | "FINISHED" | "CANCELLED";
   customer?: { name?: string; phone: string };
-  reminders?: { status: string }[];
+  reminders?: Reminder[];
 }
 
 interface Customer { id: string; name?: string; phone: string }
 
-const statusColor: Record<string, string> = { ACTIVE: C.ok, FINISHED: C.tm, CANCELLED: C.dn };
-const statusLabel: Record<string, string> = { ACTIVE: "Ativo", FINISHED: "Finalizado", CANCELLED: "Cancelado" };
+// Deriva o "estado de envio" de uma compra a partir dos lembretes.
+// Cor: verde = enviado, amarelo = agendado (vai enviar), vermelho = falhou.
+function sendState(p: Purchase): { label: string; color: string; sentAt?: string } {
+  const rs = p.reminders || [];
+  if (rs.some(r => r.status === "FAILED")) return { label: "Falha no envio", color: C.dn };
+  const sent = rs.filter(r => r.status === "SENT");
+  const pending = rs.filter(r => r.status === "PENDING");
+  if (sent.length && pending.length === 0) {
+    const last = sent.map(r => r.sentAt).filter(Boolean).sort().pop() || undefined;
+    return { label: "Enviado", color: C.ok, sentAt: last };
+  }
+  if (pending.length) return { label: "Agendado", color: C.wn };
+  if (p.status === "CANCELLED") return { label: "Cancelado", color: C.dn };
+  return { label: "Sem lembrete", color: C.tm };
+}
+
+// "DD/MM" sem ano
+const fmtDM = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—";
+
+// Dias restantes até o término, em texto relativo
+function daysLabel(iso?: string): string {
+  if (!iso) return "";
+  const end = new Date(iso); end.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = Math.round((end.getTime() - today.getTime()) / 86400000);
+  if (d > 1) return `em ${d} dias`;
+  if (d === 1) return "amanhã";
+  if (d === 0) return "hoje";
+  if (d === -1) return "ontem";
+  return `há ${-d} dias`;
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -126,7 +165,7 @@ function PurchModal({ open, onClose, onOk }: { open: boolean; onClose: () => voi
             </label>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.tm, letterSpacing: "0.06em", textTransform: "uppercase" }}>Horário (UTC):</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.tm, letterSpacing: "0.06em", textTransform: "uppercase" }}>Horário (Brasília):</span>
             <input style={{ ...inp, width: 60, padding: "4px 8px", textAlign: "center" }} type="number" min="0" max="23" value={f.sh} onChange={s("sh")} />
             <span style={{ color: C.tm }}>:</span>
             <input style={{ ...inp, width: 60, padding: "4px 8px", textAlign: "center" }} type="number" min="0" max="59" value={f.sm} onChange={s("sm")} />
@@ -141,17 +180,76 @@ function PurchModal({ open, onClose, onOk }: { open: boolean; onClose: () => voi
   );
 }
 
+function InspectModal({ purchase, onClose }: { purchase: Purchase | null; onClose: () => void }) {
+  if (!purchase) return null;
+  const st = sendState(purchase);
+  const rows: [string, React.ReactNode][] = [
+    ["Cliente", purchase.customer?.name || purchase.customer?.phone || "—"],
+    ["Medicamento", purchase.medicationName],
+    ["Quantidade", `${purchase.quantity} ${purchase.unit}`],
+    ["Dose por dia", purchase.dosePerDay ? `${purchase.dosePerDay} ${purchase.unit}/dia` : "—"],
+    ["Tratamento", purchase.treatmentDays ? `${purchase.treatmentDays} dias` : "—"],
+    ["Compra feita em", fmtDM(purchase.purchaseDate)],
+    ["Término previsto", purchase.estimatedEndDate ? `${fmtDM(purchase.estimatedEndDate)} · ${daysLabel(purchase.estimatedEndDate)}` : "—"],
+    ["Lembrete", <Badge color={st.color}>{st.label}{st.sentAt ? ` · ${fmtDM(st.sentAt)}` : ""}</Badge>],
+  ];
+  return (
+    <Modal open={!!purchase} onClose={onClose} title="Detalhes da compra" width={460}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {rows.map(([label, value], i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "11px 0", borderBottom: i < rows.length - 1 ? "1px solid " + C.bd : undefined }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.tm, letterSpacing: "0.05em", textTransform: "uppercase" }}>{label}</span>
+            <span style={{ fontSize: 13, textAlign: "right" }}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function ConfirmDelete({ purchase, onClose, onConfirm }: { purchase: Purchase | null; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Modal open={!!purchase} onClose={onClose} title="Excluir compra" width={380}>
+      <p style={{ color: C.tm, fontSize: 13, marginBottom: 20 }}>
+        Excluir a compra de <strong>{purchase?.medicationName}</strong> de <strong>{purchase?.customer?.name || purchase?.customer?.phone}</strong>? Os lembretes agendados também serão removidos. Esta ação não pode ser desfeita.
+      </p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={{ ...btn, background: C.sa, color: C.tx }}>Cancelar</button>
+        <button onClick={onConfirm} style={{ ...btn, background: C.dn, color: "#fff" }}>Excluir</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ActionBtn({ icon, title, color, onClick }: { icon: string; title: string; color: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={title} style={{ padding: "7px 9px", borderRadius: 6, border: "none", cursor: "pointer", background: color + "14", color, display: "flex", alignItems: "center" }}>
+      <Icon name={icon} size={15} />
+    </button>
+  );
+}
+
 export function Purchases() {
   const { token } = useAuth();
   const [ps, setPs] = useState<Purchase[]>([]);
   const [modal, setModal] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<Purchase | null>(null);
+  const [deleting, setDeleting] = useState<Purchase | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
   const load = useCallback(() => {
     api<Purchase[]>("/purchases", { token: token! }).then(setPs).catch(() => {});
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  const doDelete = async () => {
+    if (!deleting) return;
+    try {
+      await api(`/purchases/${deleting.id}`, { method: "DELETE", token: token! });
+      setDeleting(null); load(); setToast({ msg: "Compra excluída" });
+    } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
+  };
 
   return (
     <div>
@@ -161,15 +259,15 @@ export function Purchases() {
         </button>
       } />
       <Card style={{ padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
           <thead>
-            <tr><TH>Cliente</TH><TH>Medicamento</TH><TH>Qtd</TH><TH>Término</TH><TH>Status</TH><TH>Lembretes</TH></tr>
+            <tr><TH>Cliente</TH><TH>Medicamento</TH><TH>Qtd</TH><TH>Término</TH><TH>Lembrete</TH><TH></TH></tr>
           </thead>
           <tbody>
             {ps.length === 0
               ? <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.tm, fontSize: 13 }}>Nenhuma compra registrada</td></tr>
               : ps.map((p, i) => {
-                const rs = p.reminders || [];
+                const st = sendState(p);
                 return (
                   <tr key={p.id} style={{ borderBottom: i < ps.length - 1 ? "1px solid " + C.bd : undefined }}>
                     <TD><span style={{ fontWeight: 500 }}>{p.customer?.name || p.customer?.phone || "—"}</span></TD>
@@ -180,12 +278,24 @@ export function Purchases() {
                       </div>
                     </TD>
                     <TD><span style={{ color: C.tm }}>{p.quantity} {p.unit}</span></TD>
-                    <TD><span style={{ color: C.tm }}>{p.estimatedEndDate ? new Date(p.estimatedEndDate).toLocaleDateString("pt-BR") : "—"}</span></TD>
-                    <TD><Badge color={statusColor[p.status]}>{statusLabel[p.status] || p.status}</Badge></TD>
                     <TD>
-                      <span style={{ color: C.tm }}>
-                        {rs.filter(r => r.status === "SENT").length}/{rs.length}
-                      </span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        <span style={{ color: st.color, fontWeight: 600, fontSize: 13 }}>
+                          {p.estimatedEndDate ? `${daysLabel(p.estimatedEndDate)} · ${fmtDM(p.estimatedEndDate)}` : "—"}
+                        </span>
+                      </div>
+                    </TD>
+                    <TD>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <Badge color={st.color}>{st.label}</Badge>
+                        {st.sentAt && <span style={{ fontSize: 10, color: C.tm }}>em {fmtDM(st.sentAt)}</span>}
+                      </div>
+                    </TD>
+                    <TD>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <ActionBtn icon="eye" title="Inspecionar" color={C.pr} onClick={() => setInspecting(p)} />
+                        <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(p)} />
+                      </div>
                     </TD>
                   </tr>
                 );
@@ -193,8 +303,10 @@ export function Purchases() {
           </tbody>
         </table>
       </Card>
-      <PurchModal open={modal} onClose={() => setModal(false)} onOk={() => { load(); setModal(false); setToast("Compra registrada"); }} />
-      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
+      <PurchModal open={modal} onClose={() => setModal(false)} onOk={() => { load(); setModal(false); setToast({ msg: "Compra registrada" }); }} />
+      <InspectModal purchase={inspecting} onClose={() => setInspecting(null)} />
+      <ConfirmDelete purchase={deleting} onClose={() => setDeleting(null)} onConfirm={doDelete} />
+      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

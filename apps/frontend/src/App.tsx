@@ -6,7 +6,6 @@ import { Customers } from "./pages/Customers";
 import { Purchases } from "./pages/Purchases";
 import { Templates } from "./pages/Templates";
 import { WhatsApp } from "./pages/WhatsApp";
-import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
 import { Sidebar } from "./components/Sidebar";
 import { C } from "./lib/theme";
@@ -20,7 +19,6 @@ function Shell() {
     purch:    <Purchases />,
     tpl:      <Templates />,
     whatsapp: <WhatsApp />,
-    settings: <Settings />,
     users:    <Users />,
   };
 

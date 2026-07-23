@@ -7,7 +7,12 @@ import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
-import { PageHeader } from "../components/ui/PageHeader";
+import { PageHeader, SectionLabel } from "../components/ui/PageHeader";
+
+interface Settings {
+  defaultSendHour: number;
+  defaultSendMinute: number;
+}
 
 interface Template {
   id: string;
@@ -122,11 +127,34 @@ export function Templates() {
   const [deleting, setDeleting] = useState<Template | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
+  const [hour, setHour] = useState("10");
+  const [minute, setMinute] = useState("0");
+  const [savingSettings, setSavingSettings] = useState(false);
+
   const load = useCallback(() => {
     api<Template[]>("/templates", { token: token! }).then(setTs).catch(() => {});
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api<Settings>("/settings", { token: token! })
+      .then(s => { setHour(String(s.defaultSendHour)); setMinute(String(s.defaultSendMinute)); })
+      .catch(() => {});
+  }, [token]);
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await api("/settings", {
+        method: "PUT",
+        body: { defaultSendHour: parseInt(hour) || 10, defaultSendMinute: parseInt(minute) || 0 },
+        token: token!,
+      });
+      setToast({ msg: "Configurações salvas" });
+    } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); }
+    finally { setSavingSettings(false); }
+  };
 
   const doDelete = async () => {
     if (!deleting) return;
@@ -138,7 +166,7 @@ export function Templates() {
 
   return (
     <div>
-      <PageHeader title="Templates" />
+      <PageHeader title="Mensagem" />
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {ts.length === 0
           ? <Card><p style={{ color: C.tm, textAlign: "center", fontSize: 13 }}>Nenhum template cadastrado</p></Card>
@@ -163,6 +191,35 @@ export function Templates() {
               </div>
             </Card>
           ))}
+      </div>
+
+      <div style={{ marginTop: 32 }}>
+        <PageHeader title="Configurações de envio" />
+        <div style={{ maxWidth: 480 }}>
+          <Card>
+            <SectionLabel>Horário padrão de envio</SectionLabel>
+            <p style={{ fontSize: 12, color: C.tm, marginBottom: 16 }}>
+              Horário padrão para envio dos lembretes quando não especificado na compra.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Hora (0–23)</label>
+                <input style={{ ...inp, width: 80, textAlign: "center" }} type="number" min="0" max="23" value={hour} onChange={e => setHour(e.target.value)} />
+              </div>
+              <span style={{ color: C.tm, fontSize: 20, marginTop: 20 }}>:</span>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Minuto (0–59)</label>
+                <input style={{ ...inp, width: 80, textAlign: "center" }} type="number" min="0" max="59" value={minute} onChange={e => setMinute(e.target.value)} />
+              </div>
+              <div style={{ marginTop: 22, color: C.tm, fontSize: 13 }}>
+                Brasília · {hour.padStart(2, "0")}:{minute.padStart(2, "0")}
+              </div>
+            </div>
+            <button onClick={saveSettings} disabled={savingSettings} style={{ ...btn, background: C.pr, color: "#fff" }}>
+              {savingSettings ? "Salvando..." : "Salvar configurações"}
+            </button>
+          </Card>
+        </div>
       </div>
 
       <TplModal

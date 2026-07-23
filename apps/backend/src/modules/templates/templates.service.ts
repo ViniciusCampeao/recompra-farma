@@ -52,18 +52,31 @@ export class TemplatesService {
     vars: { cliente?: string; medicamento?: string; dias?: number; data_fim?: string },
   ): string {
     let result = body;
-
-    // {{cliente}} vazio: remove a variável e um espaço adjacente (ex: "Olá {{cliente}}!" => "Olá!")
     const nome = vars.cliente?.trim();
+
+    // Bloco {{#cliente}}...{{/cliente}}: renderiza conteúdo se tem nome, remove se não tem
+    if (nome) {
+      result = result.replace(/\{\{#cliente\}\}([\s\S]*?)\{\{\/cliente\}\}/g, (_, content) =>
+        content.replace(/\{\{cliente\}\}/g, nome),
+      );
+    } else {
+      result = result.replace(/ ?\{\{#cliente\}\}[\s\S]*?\{\{\/cliente\}\}/g, '');
+    }
+
+    // {{cliente}} simples sem nome: remove variável e espaço adjacente (ex: "Olá {{cliente}}!" => "Olá!")
     if (!nome) {
       result = result.replace(/ ?\{\{cliente\}\}/g, '');
     }
 
-    // Variáveis simples
+    // Variáveis simples restantes
     result = result.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
       const val = vars[key as keyof typeof vars];
       return val !== undefined && val !== null ? String(val) : '';
     });
+
+    // Colapsa espaços duplicados que sobram ao remover variáveis vazias,
+    // sem tocar nas quebras de linha (ex: "Olá  Vini" => "Olá Vini").
+    result = result.replace(/ {2,}/g, ' ').replace(/ +$/gm, '');
 
     return result.trim();
   }

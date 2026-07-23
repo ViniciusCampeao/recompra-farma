@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/Badge";
 import { Icon } from "../components/ui/Icon";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Toast } from "../components/ui/Toast";
+import { Modal } from "../components/ui/Modal";
 
 const INSTANCE = "farmacia";
 
@@ -75,6 +76,7 @@ export function WhatsApp() {
   const [qrImg, setQrImg] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
 
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [activePhone, setActivePhone] = useState<string | null>(null);
@@ -128,7 +130,16 @@ export function WhatsApp() {
     try {
       await api(`/evolution/instance/logout/${INSTANCE}`, { method: "DELETE", token: token! });
       setState("disconnected"); setConvs([]); setActivePhone(null); setMessages([]);
-      setToast({ msg: "Desconectado com sucesso" });
+      setToast({ msg: "Sessão encerrada" });
+    } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); }
+  };
+
+  const wipeData = async () => {
+    setConfirmWipe(false);
+    try {
+      const r = await api<{ deleted: number }>("/messages", { method: "DELETE", token: token! });
+      setConvs([]); setActivePhone(null); setMessages([]);
+      setToast({ msg: `${r.deleted} mensagens apagadas do banco` });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); }
   };
 
@@ -230,6 +241,17 @@ export function WhatsApp() {
             <button onClick={connect} style={{ ...btn, background: C.ok, color: "#fff" }}>
               <Icon name="link" size={15} />Gerar QR Code
             </button>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, borderTop: "1px solid " + C.bd, paddingTop: 12, flexWrap: "wrap" }}>
+              <button onClick={disconnect} style={{ ...btn, background: C.sa, color: C.tm }}>
+                <Icon name="out" size={15} />Sair da sessão
+              </button>
+              <button onClick={() => setConfirmWipe(true)} style={{ ...btn, background: C.dn + "12", color: C.dn }}>
+                <Icon name="trash" size={15} />Apagar dados
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: C.tm, marginTop: 10, lineHeight: 1.6 }}>
+              <strong>Sair da sessão</strong> desconecta a conta atual do WhatsApp. <strong>Apagar dados</strong> remove todas as conversas salvas no banco — use antes de conectar outro número.
+            </p>
           </Card>
 
           {(qrImg || qr) && (
@@ -256,6 +278,7 @@ export function WhatsApp() {
             </Card>
           )}
         </div>
+        <WipeModal open={confirmWipe} onClose={() => setConfirmWipe(false)} onConfirm={wipeData} />
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </div>
     );
@@ -275,8 +298,11 @@ export function WhatsApp() {
           <button onClick={loadConvs} style={{ ...btn, background: C.sa, color: C.tm }}>
             <Icon name="ref" size={15} />Atualizar
           </button>
+          <button onClick={() => setConfirmWipe(true)} style={{ ...btn, background: C.sa, color: C.tm }}>
+            <Icon name="trash" size={15} />Apagar dados
+          </button>
           <button onClick={disconnect} style={{ ...btn, background: C.dn + "12", color: C.dn }}>
-            Desconectar
+            <Icon name="out" size={15} />Sair da sessão
           </button>
         </div>
       </div>
@@ -424,7 +450,22 @@ export function WhatsApp() {
         </div>
       </Card>
 
+      <WipeModal open={confirmWipe} onClose={() => setConfirmWipe(false)} onConfirm={wipeData} />
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
+  );
+}
+
+function WipeModal({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Apagar dados das conversas" width={400}>
+      <p style={{ color: C.tm, fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+        Isso remove <strong>todas as conversas salvas no banco</strong> (enviadas e recebidas). Não afeta o WhatsApp em si, só o histórico guardado aqui. Esta ação não pode ser desfeita.
+      </p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={{ ...btn, background: C.sa, color: C.tx }}>Cancelar</button>
+        <button onClick={onConfirm} style={{ ...btn, background: C.dn, color: "#fff" }}>Apagar tudo</button>
+      </div>
+    </Modal>
   );
 }

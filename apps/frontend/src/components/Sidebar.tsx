@@ -9,9 +9,8 @@ const nav: NavItem[] = [
   { k: "dash",     l: "Painel",       i: "home" },
   { k: "cust",     l: "Clientes",     i: "users" },
   { k: "purch",    l: "Compras",      i: "cart" },
-  { k: "tpl",      l: "Templates",    i: "tpl" },
+  { k: "tpl",      l: "Mensagem",     i: "tpl" },
   { k: "whatsapp", l: "WhatsApp",     i: "whatsapp" },
-  { k: "settings", l: "Configurações",i: "gear" },
   { k: "users",    l: "Usuários",     i: "userplus", adminOnly: true },
 ];
 
