@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -11,11 +12,12 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { IsString, IsEmail, IsOptional, IsBoolean, IsEnum, MinLength } from 'class-validator';
 import { UserRole } from '@prisma/client';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
 class CreateUserDto {
   @IsString() @IsOptional() name?: string;
@@ -80,5 +82,19 @@ export class UsersController {
       data,
       select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
     });
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string, @CurrentUser() current: { id: string }) {
+    if (id === current.id) {
+      throw new BadRequestException('Você não pode excluir o próprio usuário');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    // Mensagens enviadas e audit logs têm onDelete: SetNull, então a exclusão
+    // não quebra o histórico — apenas remove a atribuição de autor.
+    await this.prisma.user.delete({ where: { id } });
+    return { deleted: true };
   }
 }

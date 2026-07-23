@@ -89,10 +89,11 @@ function UserModal({ open, onClose, onOk, editing }: { open: boolean; onClose: (
 }
 
 export function Users() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState<User | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
   const load = useCallback(() => {
@@ -100,6 +101,14 @@ export function Users() {
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  const doDelete = async () => {
+    if (!deleting) return;
+    try {
+      await api(`/users/${deleting.id}`, { method: "DELETE", token: token! });
+      setDeleting(null); load(); setToast({ msg: "Usuário excluído" });
+    } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
+  };
 
   return (
     <div>
@@ -124,13 +133,24 @@ export function Users() {
                   <TD><Badge color={u.active ? C.ok : C.dn}>{u.active ? "Ativo" : "Inativo"}</Badge></TD>
                   <TD><span style={{ color: C.tm }}>{new Date(u.createdAt).toLocaleDateString("pt-BR")}</span></TD>
                   <td style={{ padding: "8px 14px" }}>
-                    <button
-                      onClick={() => { setEditing(u); setModal(true); }}
-                      title="Editar"
-                      style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: C.pr + "14", color: C.pr, display: "flex", alignItems: "center" }}
-                    >
-                      <Icon name="edit" size={15} />
-                    </button>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => { setEditing(u); setModal(true); }}
+                        title="Editar"
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: C.pr + "14", color: C.pr, display: "flex", alignItems: "center" }}
+                      >
+                        <Icon name="edit" size={15} />
+                      </button>
+                      {u.id !== user?.id && (
+                        <button
+                          onClick={() => setDeleting(u)}
+                          title="Excluir"
+                          style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: C.dn + "14", color: C.dn, display: "flex", alignItems: "center" }}
+                        >
+                          <Icon name="trash" size={15} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -143,6 +163,15 @@ export function Users() {
         editing={editing}
         onOk={() => { load(); setModal(false); setToast({ msg: editing ? "Usuário atualizado" : "Usuário criado" }); }}
       />
+      <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Excluir usuário" width={380}>
+        <p style={{ color: C.tm, fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+          Excluir <strong>{deleting?.name || deleting?.email}</strong>? Esta ação não pode ser desfeita. Se preferir manter o histórico, desative o usuário em vez de excluir.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={() => setDeleting(null)} style={{ ...btn, background: C.sa, color: C.tx }}>Cancelar</button>
+          <button onClick={doDelete} style={{ ...btn, background: C.dn, color: "#fff" }}>Excluir</button>
+        </div>
+      </Modal>
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );

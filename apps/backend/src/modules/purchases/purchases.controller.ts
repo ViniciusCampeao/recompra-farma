@@ -57,7 +57,7 @@ export class PurchasesController {
   }
 
   @Delete(':id')
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 }

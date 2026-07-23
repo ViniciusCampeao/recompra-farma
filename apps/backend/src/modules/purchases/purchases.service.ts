@@ -229,21 +229,14 @@ export class PurchasesService {
     return { success: true };
   }
 
-  async cancel(id: string) {
+  /**
+   * Exclusão real da compra. reminderConfig e scheduledReminders têm
+   * onDelete: Cascade (somem junto); MessageLog é SetNull (o histórico de
+   * mensagens permanece, só desvincula da compra).
+   */
+  async remove(id: string) {
     await this.findOne(id);
-
-    return this.prisma.$transaction(async (tx) => {
-      // Cancela reminders pendentes
-      await tx.scheduledReminder.updateMany({
-        where: { purchaseId: id, status: ReminderStatus.PENDING },
-        data: { status: ReminderStatus.CANCELLED },
-      });
-
-      return tx.purchase.update({
-        where: { id },
-        data: { status: PurchaseStatus.CANCELLED },
-        include: { reminderConfig: true, reminders: true },
-      });
-    });
+    await this.prisma.purchase.delete({ where: { id } });
+    return { deleted: true };
   }
 }
