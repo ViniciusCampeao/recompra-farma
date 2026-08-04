@@ -9,7 +9,7 @@
       // Aplica o tema antes do React montar, pra não piscar claro→escuro no load.
       (function () {
         try {
-          var stored = localStorage.getItem("farmatec_theme");
+          var stored = localStorage.getItem("autofarma_theme");
           var theme = stored === "light" || stored === "dark"
             ? stored
             : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");

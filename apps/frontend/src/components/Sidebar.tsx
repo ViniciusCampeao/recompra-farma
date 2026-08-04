@@ -51,7 +51,7 @@ export function Sidebar() {
         <span style={{ fontSize: 20, lineHeight: 1 }}>＋</span>
         {!collapsed && (
           <span style={{ color: C.sbt, fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            Farma Tec
+            Autofarma
           </span>
         )}
       </div>

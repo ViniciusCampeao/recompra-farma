@@ -17,7 +17,7 @@ interface AuthCtx {
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
-const LS_KEY = "farmatec_token";
+const LS_KEY = "autofarma_token";
 
 export function useAuth() {
   const ctx = useContext(Ctx);

@@ -27,7 +27,7 @@ export function Login() {
       <div style={{ width: "100%", maxWidth: 360 }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: C.pr, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: "#fff", fontSize: 22, fontWeight: 700 }}>F</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "0.01em" }}>Farma Tec</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "0.01em" }}>Autofarma</h1>
           <p style={{ color: C.tm, fontSize: 13, marginTop: 4 }}>Acesse sua conta</p>
         </div>
         <div style={{ background: C.sf, borderRadius: 8, border: "1px solid " + C.bd, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>

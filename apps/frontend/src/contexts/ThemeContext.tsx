@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 type Theme = "light" | "dark";
-const LS_KEY = "farmatec_theme";
+const LS_KEY = "autofarma_theme";
 
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem(LS_KEY);
