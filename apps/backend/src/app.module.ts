@@ -21,7 +21,7 @@ import { validateEnv } from './config/env.validation';
       isGlobal: true,
       validate: validateEnv,
     }),
-    ServeStaticModule.forRoot({ rootPath: join(__dirname, '..', 'public'), exclude: ['/api*'] }),
+    ServeStaticModule.forRoot({ rootPath: join(__dirname, '..', 'public'), exclude: ['/api/*path'] }),
     PrismaModule,
     HealthModule,
     AuthModule,
