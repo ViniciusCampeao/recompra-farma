@@ -33,3 +33,14 @@ export function TD({ children, mono }: { children: ReactNode; mono?: boolean }) 
     </td>
   );
 }
+
+// Linha de status (carregando / vazio) ocupando a largura inteira da tabela.
+export function TableMessage({ colSpan, children }: { colSpan: number; children: ReactNode }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ padding: 32, textAlign: "center", color: C.tm, fontSize: 13 }}>
+        {children}
+      </td>
+    </tr>
+  );
+}

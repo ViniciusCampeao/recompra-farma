@@ -28,20 +28,29 @@ export class CustomersService {
     });
   }
 
-  async findAll(search?: string) {
-    return this.prisma.customer.findMany({
-      where: search
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { phone: { contains: search } },
-              { phoneRaw: { contains: search } },
-            ],
-          }
-        : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { purchases: true } } },
-    });
+  async findAll(search?: string, page = 1, pageSize = 20) {
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { phone: { contains: search } },
+            { phoneRaw: { contains: search } },
+          ],
+        }
+      : undefined;
+
+    const [data, total] = await Promise.all([
+      this.prisma.customer.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { _count: { select: { purchases: true } } },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.customer.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
   }
 
   async findOne(id: string) {

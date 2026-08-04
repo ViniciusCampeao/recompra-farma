@@ -36,14 +36,28 @@ export class PurchasesController {
   }
 
   @Get()
-  findAll(@Query('customerId') customerId?: string) {
-    return this.service.findAll(customerId);
+  findAll(
+    @Query('customerId') customerId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.service.findAll(
+      customerId,
+      page ? parseInt(page, 10) : undefined,
+      pageSize ? parseInt(pageSize, 10) : undefined,
+    );
   }
 
   /** Lembretes agendados para hoje (pendentes + já enviados). */
   @Get('reminders/today')
   remindersToday() {
     return this.service.remindersToday();
+  }
+
+  /** Contagens agregadas pro Painel. */
+  @Get('stats/summary')
+  stats() {
+    return this.service.stats();
   }
 
   @Get(':id')

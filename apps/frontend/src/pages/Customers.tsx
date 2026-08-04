@@ -1,13 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, inp, btn } from "../lib/theme";
+import { C, inp, btn, alpha } from "../lib/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
-import { PageHeader, TH, TD } from "../components/ui/PageHeader";
+import { PageHeader, TH, TD, TableMessage } from "../components/ui/PageHeader";
+import { ErrorState } from "../components/ui/ErrorState";
+import { Pagination } from "../components/ui/Pagination";
+
+const PAGE_SIZE = 20;
 
 interface Customer {
   id: string;
@@ -23,6 +28,36 @@ interface Template {
   id: string;
   name: string;
   body: string;
+}
+
+interface CustomerPage {
+  data: Customer[];
+  total: number;
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function ErrBox({ msg }: { msg: string }) {
+  return <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: alpha(C.dn, 7), borderRadius: 6 }}>{msg}</div>;
+}
+
+function ActionBtn({ icon, title, color, onClick }: { icon: string; title: string; color: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: alpha(color, 8), color, display: "flex", alignItems: "center" }}
+    >
+      <Icon name={icon} size={15} />
+    </button>
+  );
 }
 
 function CustModal({
@@ -177,31 +212,37 @@ function ConfirmModal({ open, onClose, onConfirm, title, msg }: { open: boolean;
 
 export function Customers() {
   const { token } = useAuth();
-  const [cs, setCs] = useState<Customer[]>([]);
   const [q, setQ] = useState("");
+  const [search, setSearch] = useState(""); // debounced
+  const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [deleting, setDeleting] = useState<Customer | null>(null);
   const [testModal, setTestModal] = useState<Customer | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
-  const load = useCallback(() => {
-    api<Customer[]>("/customers", { token: token! }).then(setCs).catch(() => {});
-  }, [token]);
+  // Debounce da busca — evita 1 requisição por tecla digitada.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(q); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  useEffect(() => { load(); }, [load]);
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["customers", search, page],
+    queryFn: () => api<CustomerPage>(
+      `/customers?search=${encodeURIComponent(search)}&page=${page}&pageSize=${PAGE_SIZE}`,
+      { token: token! },
+    ),
+    enabled: !!token,
+  });
 
-  const fl = cs.filter(c =>
-    (c.name || "").toLowerCase().includes(q.toLowerCase()) ||
-    c.phone.includes(q) ||
-    (c.phoneRaw || "").includes(q)
-  );
+  const list = data?.data ?? [];
 
   const doDelete = async () => {
     if (!deleting) return;
     try {
       await api(`/customers/${deleting.id}`, { method: "DELETE", token: token! });
-      setDeleting(null); load(); setToast({ msg: "Cliente excluído" });
+      setDeleting(null); refetch(); setToast({ msg: "Cliente excluído" });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
   };
 
@@ -216,40 +257,50 @@ export function Customers() {
         <input style={{ ...inp, paddingLeft: 38 }} placeholder="Buscar por nome ou telefone..." value={q} onChange={e => setQ(e.target.value)} />
         <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: C.tm }}><Icon name="search" size={16} /></span>
       </div>
-      <Card style={{ padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
-          <thead>
-            <tr>
-              <TH>Nome</TH><TH>Telefone</TH><TH>Compras</TH><TH>Cadastro</TH><TH></TH>
-            </tr>
-          </thead>
-          <tbody>
-            {fl.length === 0
-              ? <tr><td colSpan={5} style={{ padding: 32, textAlign: "center", color: C.tm, fontSize: 13 }}>{cs.length === 0 ? "Nenhum cliente cadastrado" : "Nenhum resultado"}</td></tr>
-              : fl.map((c, i) => (
-                <tr key={c.id} style={{ borderBottom: i < fl.length - 1 ? "1px solid " + C.bd : undefined }}>
-                  <TD><span style={{ fontWeight: 500 }}>{c.name || <span style={{ color: C.tm }}>—</span>}</span></TD>
-                  <TD mono>{c.phoneRaw || c.phone}</TD>
-                  <TD><Badge color={C.pr}>{c._count?.purchases ?? 0}</Badge></TD>
-                  <TD><span style={{ color: C.tm }}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</span></TD>
-                  <td style={{ padding: "8px 14px" }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <ActionBtn icon="send" title="Enviar mensagem" color={C.ok} onClick={() => setTestModal(c)} />
-                      <ActionBtn icon="edit" title="Editar" color={C.pr} onClick={() => { setEditing(c); setModal(true); }} />
-                      <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(c)} />
-                    </div>
-                  </td>
+
+      {isError ? (
+        <ErrorState message="Falha ao carregar os clientes." onRetry={() => refetch()} />
+      ) : (
+        <>
+          <Card style={{ padding: 0, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+              <thead>
+                <tr>
+                  <TH>Nome</TH><TH>Telefone</TH><TH>Compras</TH><TH>Cadastro</TH><TH></TH>
                 </tr>
-              ))}
-          </tbody>
-        </table>
-      </Card>
+              </thead>
+              <tbody>
+                {isLoading
+                  ? <TableMessage colSpan={5}>Carregando...</TableMessage>
+                  : list.length === 0
+                    ? <TableMessage colSpan={5}>{search ? "Nenhum resultado" : "Nenhum cliente cadastrado"}</TableMessage>
+                    : list.map((c, i) => (
+                      <tr key={c.id} style={{ borderBottom: i < list.length - 1 ? "1px solid " + C.bd : undefined }}>
+                        <TD><span style={{ fontWeight: 500 }}>{c.name || <span style={{ color: C.tm }}>—</span>}</span></TD>
+                        <TD mono>{c.phoneRaw || c.phone}</TD>
+                        <TD><Badge color={C.pr}>{c._count?.purchases ?? 0}</Badge></TD>
+                        <TD><span style={{ color: C.tm }}>{new Date(c.createdAt).toLocaleDateString("pt-BR")}</span></TD>
+                        <td style={{ padding: "8px 14px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <ActionBtn icon="send" title="Enviar mensagem" color={C.ok} onClick={() => setTestModal(c)} />
+                            <ActionBtn icon="edit" title="Editar" color={C.pr} onClick={() => { setEditing(c); setModal(true); }} />
+                            <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(c)} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+              </tbody>
+            </table>
+          </Card>
+          {data && <Pagination page={page} pageSize={PAGE_SIZE} total={data.total} onChange={setPage} />}
+        </>
+      )}
 
       <CustModal
         open={modal}
         onClose={() => setModal(false)}
         editing={editing}
-        onOk={() => { load(); setModal(false); setToast({ msg: editing ? "Cliente atualizado" : "Cliente criado" }); }}
+        onOk={() => { refetch(); setModal(false); setToast({ msg: editing ? "Cliente atualizado" : "Cliente criado" }); }}
       />
       <SendTestModal open={!!testModal} onClose={() => setTestModal(null)} customer={testModal} />
       <ConfirmModal
@@ -261,30 +312,5 @@ export function Customers() {
       />
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
     </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function ErrBox({ msg }: { msg: string }) {
-  return <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: C.dn + "12", borderRadius: 6 }}>{msg}</div>;
-}
-
-function ActionBtn({ icon, title, color, onClick }: { icon: string; title: string; color: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: color + "14", color, display: "flex", alignItems: "center" }}
-    >
-      <Icon name={icon} size={15} />
-    </button>
   );
 }

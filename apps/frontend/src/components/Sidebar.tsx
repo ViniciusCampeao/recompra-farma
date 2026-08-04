@@ -1,26 +1,26 @@
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { C } from "../lib/theme";
 import { Icon } from "./ui/Icon";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
 
-interface NavItem { k: string; l: string; i: string; adminOnly?: boolean }
+interface NavItem { path: string; l: string; i: string; adminOnly?: boolean }
 
 const nav: NavItem[] = [
-  { k: "dash",     l: "Painel",       i: "home" },
-  { k: "cust",     l: "Clientes",     i: "users" },
-  { k: "purch",    l: "Compras",      i: "cart" },
-  { k: "tpl",      l: "Mensagem",     i: "tpl" },
-  { k: "whatsapp", l: "WhatsApp",     i: "whatsapp" },
-  { k: "users",    l: "Usuários",     i: "userplus", adminOnly: true },
+  { path: "/painel",   l: "Painel",       i: "home" },
+  { path: "/clientes", l: "Clientes",     i: "users" },
+  { path: "/compras",  l: "Compras",      i: "cart" },
+  { path: "/mensagem", l: "Mensagem",     i: "tpl" },
+  { path: "/whatsapp", l: "WhatsApp",     i: "whatsapp" },
+  { path: "/usuarios", l: "Usuários",     i: "userplus", adminOnly: true },
 ];
 
-interface SidebarProps {
-  active: string;
-  onChange: (page: string) => void;
-}
-
-export function Sidebar({ active, onChange }: SidebarProps) {
+export function Sidebar() {
   const { user, logout } = useAuth();
+  const { theme, toggle } = useTheme();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(window.innerWidth < 900);
   const isAdmin = (user as any)?.role === "ADMIN";
 
@@ -58,11 +58,11 @@ export function Sidebar({ active, onChange }: SidebarProps) {
 
       <nav style={{ flex: 1, padding: "10px 6px" }}>
         {items.map(n => {
-          const a = active === n.k;
+          const a = location.pathname === n.path;
           return (
             <button
-              key={n.k}
-              onClick={() => onChange(n.k)}
+              key={n.path}
+              onClick={() => navigate(n.path)}
               title={collapsed ? n.l : undefined}
               style={{
                 display: "flex",
@@ -100,6 +100,29 @@ export function Sidebar({ active, onChange }: SidebarProps) {
             {user.name || user.email}
           </div>
         )}
+        <button
+          onClick={toggle}
+          title={collapsed ? (theme === "dark" ? "Tema claro" : "Tema escuro") : undefined}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: 8,
+            width: "100%",
+            padding: "8px 6px",
+            borderRadius: 6,
+            border: "none",
+            cursor: "pointer",
+            background: "transparent",
+            color: C.sbm,
+            fontSize: 12,
+            textAlign: "left",
+            marginBottom: 2,
+          }}
+        >
+          <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
+          {!collapsed && (theme === "dark" ? "Tema claro" : "Tema escuro")}
+        </button>
         <button
           onClick={logout}
           title={collapsed ? "Sair" : undefined}

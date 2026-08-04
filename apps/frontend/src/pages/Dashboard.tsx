@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { C } from "../lib/theme";
@@ -7,8 +7,14 @@ import { Stat } from "../components/ui/Stat";
 import { Badge } from "../components/ui/Badge";
 import { Icon } from "../components/ui/Icon";
 import { PageHeader } from "../components/ui/PageHeader";
+import { ErrorState } from "../components/ui/ErrorState";
 
-interface Stats { c: number; a: number; p: number; s: number }
+interface Stats {
+  customers: number;
+  activePurchases: number;
+  pendingReminders: number;
+  sentReminders: number;
+}
 
 interface Reminder {
   id: string;
@@ -36,38 +42,45 @@ const fmtPhone = (e164: string) => {
 
 export function Dashboard() {
   const { token } = useAuth();
-  const [st, setSt] = useState<Stats>({ c: 0, a: 0, p: 0, s: 0 });
-  const [apiOk, setApiOk] = useState<boolean | null>(null);
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [loadingRem, setLoadingRem] = useState(true);
 
-  useEffect(() => {
-    Promise.all([
-      api<{ length: number }[]>("/customers", { token: token! }),
-      api<{ status: string; reminders?: { status: string }[] }[]>("/purchases", { token: token! }),
-    ]).then(([cs, ps]) => {
-      const a = ps.filter(p => p.status === "ACTIVE").length;
-      const rs = ps.flatMap(p => p.reminders || []);
-      setSt({ c: cs.length, a, p: rs.filter(r => r.status === "PENDING").length, s: rs.filter(r => r.status === "SENT").length });
-    }).catch(() => {});
+  const stats = useQuery({
+    queryKey: ["stats-summary"],
+    queryFn: () => api<Stats>("/purchases/stats/summary", { token: token! }),
+    enabled: !!token,
+  });
 
-    api<Reminder[]>("/purchases/reminders/today", { token: token! })
-      .then(r => { setReminders(Array.isArray(r) ? r : []); setLoadingRem(false); })
-      .catch(() => setLoadingRem(false));
+  const reminders = useQuery({
+    queryKey: ["reminders-today"],
+    queryFn: () => api<Reminder[]>("/purchases/reminders/today", { token: token! }),
+    enabled: !!token,
+  });
 
-    api("/health", { token: token! }).then(() => setApiOk(true)).catch(() => setApiOk(false));
-  }, [token]);
+  const health = useQuery({
+    queryKey: ["health"],
+    queryFn: () => api("/health", { token: token! }),
+    enabled: !!token,
+    retry: false,
+  });
 
-  const pending = reminders.filter(r => r.status === "PENDING").length;
+  const st = stats.data ?? { customers: 0, activePurchases: 0, pendingReminders: 0, sentReminders: 0 };
+  const remindersList = reminders.data ?? [];
+  const pending = remindersList.filter(r => r.status === "PENDING").length;
 
   return (
     <div>
       <PageHeader title="Painel" />
+
+      {stats.isError && (
+        <div style={{ marginBottom: 20 }}>
+          <ErrorState message="Falha ao carregar os números do painel." onRetry={() => stats.refetch()} />
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
-        <Stat icon="users"  label="Clientes"       value={st.c} color={C.pr} />
-        <Stat icon="cart"   label="Compras Ativas"  value={st.a} color={C.ok} />
-        <Stat icon="clock"  label="Pendentes"       value={st.p} color={C.wn} />
-        <Stat icon="check"  label="Enviados"        value={st.s} color={C.ok} />
+        <Stat icon="users"  label="Clientes"       value={stats.isLoading ? 0 : st.customers}        color={C.pr} />
+        <Stat icon="cart"   label="Compras Ativas"  value={stats.isLoading ? 0 : st.activePurchases}  color={C.ok} />
+        <Stat icon="clock"  label="Pendentes"       value={stats.isLoading ? 0 : st.pendingReminders} color={C.wn} />
+        <Stat icon="check"  label="Enviados"        value={stats.isLoading ? 0 : st.sentReminders}    color={C.ok} />
       </div>
 
       {/* Lembretes de hoje */}
@@ -82,21 +95,25 @@ export function Dashboard() {
           </Badge>
         </div>
 
-        {loadingRem ? (
+        {reminders.isError ? (
+          <div style={{ padding: 18 }}>
+            <ErrorState message="Falha ao carregar os lembretes de hoje." onRetry={() => reminders.refetch()} />
+          </div>
+        ) : reminders.isLoading ? (
           <div style={{ padding: 24, textAlign: "center", color: C.tm, fontSize: 13 }}>Carregando...</div>
-        ) : reminders.length === 0 ? (
+        ) : remindersList.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: C.tm, fontSize: 13 }}>
             Nenhum lembrete agendado para hoje
           </div>
         ) : (
           <div>
-            {reminders.map((r, i) => (
+            {remindersList.map((r, i) => (
               <div
                 key={r.id}
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "12px 18px",
-                  borderBottom: i < reminders.length - 1 ? "1px solid " + C.bd : undefined,
+                  borderBottom: i < remindersList.length - 1 ? "1px solid " + C.bd : undefined,
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.tm, width: 48, flexShrink: 0 }}>
@@ -123,8 +140,8 @@ export function Dashboard() {
             <Icon name="wifi" size={18} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>Status do Sistema</span>
           </div>
-          <Badge color={apiOk === null ? C.tm : apiOk ? C.ok : C.dn}>
-            {apiOk === null ? "Verificando" : apiOk ? "Online" : "Offline"}
+          <Badge color={health.isLoading ? C.tm : health.isError ? C.dn : C.ok}>
+            {health.isLoading ? "Verificando" : health.isError ? "Offline" : "Online"}
           </Badge>
         </div>
       </Card>

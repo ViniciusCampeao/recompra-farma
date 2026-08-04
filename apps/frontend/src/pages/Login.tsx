@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, inp, btn } from "../lib/theme";
+import { C, inp, btn, alpha } from "../lib/theme";
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, sessionExpired } = useAuth();
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -39,7 +39,12 @@ export function Login() {
             <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Senha</label>
             <input style={inp} type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••" onKeyDown={e => e.key === "Enter" && go()} />
           </div>
-          {err && <div style={{ color: C.dn, fontSize: 12, marginBottom: 14, padding: "8px 12px", background: C.dn + "14", borderRadius: 6 }}>{err}</div>}
+          {!err && sessionExpired && (
+            <div style={{ color: C.wn, fontSize: 12, marginBottom: 14, padding: "8px 12px", background: alpha(C.wn, 12), borderRadius: 6 }}>
+              Sua sessão expirou. Faça login novamente.
+            </div>
+          )}
+          {err && <div style={{ color: C.dn, fontSize: 12, marginBottom: 14, padding: "8px 12px", background: alpha(C.dn, 8), borderRadius: 6 }}>{err}</div>}
           <button onClick={go} disabled={loading} style={{ ...btn, width: "100%", justifyContent: "center", background: C.pr, color: "#fff", opacity: loading ? 0.7 : 1 }}>
             {loading ? "Entrando..." : "Entrar"}
           </button>

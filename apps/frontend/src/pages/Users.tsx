@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, inp, btn } from "../lib/theme";
+import { C, inp, btn, alpha } from "../lib/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
-import { PageHeader, TH, TD } from "../components/ui/PageHeader";
+import { PageHeader, TH, TD, TableMessage } from "../components/ui/PageHeader";
+import { ErrorState } from "../components/ui/ErrorState";
 
 interface User {
   id: string;
@@ -79,7 +81,7 @@ function UserModal({ open, onClose, onOk, editing }: { open: boolean; onClose: (
             Usuário ativo
           </label>
         )}
-        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: C.dn + "12", borderRadius: 6 }}>{err}</div>}
+        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: alpha(C.dn, 7), borderRadius: 6 }}>{err}</div>}
         <button onClick={go} disabled={loading} style={{ ...btn, justifyContent: "center", background: C.pr, color: "#fff" }}>
           {loading ? "Salvando..." : editing ? "Salvar alterações" : "Criar usuário"}
         </button>
@@ -90,23 +92,24 @@ function UserModal({ open, onClose, onOk, editing }: { open: boolean; onClose: (
 
 export function Users() {
   const { token, user } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<User | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
-  const load = useCallback(() => {
-    api<User[]>("/users", { token: token! }).then(setUsers).catch(() => {});
-  }, [token]);
+  const { data: users, isLoading, isError, refetch } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api<User[]>("/users", { token: token! }),
+    enabled: !!token,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const list = users ?? [];
 
   const doDelete = async () => {
     if (!deleting) return;
     try {
       await api(`/users/${deleting.id}`, { method: "DELETE", token: token! });
-      setDeleting(null); load(); setToast({ msg: "Usuário excluído" });
+      setDeleting(null); refetch(); setToast({ msg: "Usuário excluído" });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
   };
 
@@ -117,51 +120,57 @@ export function Users() {
           <Icon name="plus" size={16} />Novo usuário
         </button>
       } />
-      <Card style={{ padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
-          <thead>
-            <tr><TH>Nome</TH><TH>Email</TH><TH>Perfil</TH><TH>Status</TH><TH>Criado</TH><TH></TH></tr>
-          </thead>
-          <tbody>
-            {users.length === 0
-              ? <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.tm, fontSize: 13 }}>Nenhum usuário</td></tr>
-              : users.map((u, i) => (
-                <tr key={u.id} style={{ borderBottom: i < users.length - 1 ? "1px solid " + C.bd : undefined }}>
-                  <TD><span style={{ fontWeight: 500 }}>{u.name || "—"}</span></TD>
-                  <TD><span style={{ color: C.tm }}>{u.email}</span></TD>
-                  <TD><Badge color={u.role === "ADMIN" ? C.pr : C.tm}>{u.role === "ADMIN" ? "Admin" : "Atendente"}</Badge></TD>
-                  <TD><Badge color={u.active ? C.ok : C.dn}>{u.active ? "Ativo" : "Inativo"}</Badge></TD>
-                  <TD><span style={{ color: C.tm }}>{new Date(u.createdAt).toLocaleDateString("pt-BR")}</span></TD>
-                  <td style={{ padding: "8px 14px" }}>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button
-                        onClick={() => { setEditing(u); setModal(true); }}
-                        title="Editar"
-                        style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: C.pr + "14", color: C.pr, display: "flex", alignItems: "center" }}
-                      >
-                        <Icon name="edit" size={15} />
-                      </button>
-                      {u.id !== user?.id && (
-                        <button
-                          onClick={() => setDeleting(u)}
-                          title="Excluir"
-                          style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: C.dn + "14", color: C.dn, display: "flex", alignItems: "center" }}
-                        >
-                          <Icon name="trash" size={15} />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </Card>
+      {isError ? (
+        <ErrorState message="Falha ao carregar os usuários." onRetry={() => refetch()} />
+      ) : (
+        <Card style={{ padding: 0, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
+            <thead>
+              <tr><TH>Nome</TH><TH>Email</TH><TH>Perfil</TH><TH>Status</TH><TH>Criado</TH><TH></TH></tr>
+            </thead>
+            <tbody>
+              {isLoading
+                ? <TableMessage colSpan={6}>Carregando...</TableMessage>
+                : list.length === 0
+                  ? <TableMessage colSpan={6}>Nenhum usuário</TableMessage>
+                  : list.map((u, i) => (
+                    <tr key={u.id} style={{ borderBottom: i < list.length - 1 ? "1px solid " + C.bd : undefined }}>
+                      <TD><span style={{ fontWeight: 500 }}>{u.name || "—"}</span></TD>
+                      <TD><span style={{ color: C.tm }}>{u.email}</span></TD>
+                      <TD><Badge color={u.role === "ADMIN" ? C.pr : C.tm}>{u.role === "ADMIN" ? "Admin" : "Atendente"}</Badge></TD>
+                      <TD><Badge color={u.active ? C.ok : C.dn}>{u.active ? "Ativo" : "Inativo"}</Badge></TD>
+                      <TD><span style={{ color: C.tm }}>{new Date(u.createdAt).toLocaleDateString("pt-BR")}</span></TD>
+                      <td style={{ padding: "8px 14px" }}>
+                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => { setEditing(u); setModal(true); }}
+                            title="Editar"
+                            style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: alpha(C.pr, 8), color: C.pr, display: "flex", alignItems: "center" }}
+                          >
+                            <Icon name="edit" size={15} />
+                          </button>
+                          {u.id !== user?.id && (
+                            <button
+                              onClick={() => setDeleting(u)}
+                              title="Excluir"
+                              style={{ padding: "6px 8px", borderRadius: 6, border: "none", cursor: "pointer", background: alpha(C.dn, 8), color: C.dn, display: "flex", alignItems: "center" }}
+                            >
+                              <Icon name="trash" size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
       <UserModal
         open={modal}
         onClose={() => setModal(false)}
         editing={editing}
-        onOk={() => { load(); setModal(false); setToast({ msg: editing ? "Usuário atualizado" : "Usuário criado" }); }}
+        onOk={() => { refetch(); setModal(false); setToast({ msg: editing ? "Usuário atualizado" : "Usuário criado" }); }}
       />
       <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Excluir usuário" width={380}>
         <p style={{ color: C.tm, fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>

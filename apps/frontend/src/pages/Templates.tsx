@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, inp, btn } from "../lib/theme";
+import { C, inp, btn, alpha } from "../lib/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
 import { PageHeader, SectionLabel } from "../components/ui/PageHeader";
+import { ErrorState } from "../components/ui/ErrorState";
 
 interface Settings {
   defaultSendHour: number;
@@ -96,7 +98,7 @@ function TplModal({
             Ativo
           </label>
         </div>
-        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: C.dn + "12", borderRadius: 6 }}>{err}</div>}
+        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: alpha(C.dn, 7), borderRadius: 6 }}>{err}</div>}
         <button onClick={go} disabled={loading} style={{ ...btn, justifyContent: "center", background: C.pr, color: "#fff" }}>
           {loading ? "Salvando..." : "Salvar alterações"}
         </button>
@@ -121,7 +123,6 @@ function ConfirmModal({ open, onClose, onConfirm, name }: { open: boolean; onClo
 
 export function Templates() {
   const { token } = useAuth();
-  const [ts, setTs] = useState<Template[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
   const [deleting, setDeleting] = useState<Template | null>(null);
@@ -131,17 +132,24 @@ export function Templates() {
   const [minute, setMinute] = useState("0");
   const [savingSettings, setSavingSettings] = useState(false);
 
-  const load = useCallback(() => {
-    api<Template[]>("/templates", { token: token! }).then(setTs).catch(() => {});
-  }, [token]);
+  const { data: ts, isLoading, isError, refetch } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => api<Template[]>("/templates", { token: token! }),
+    enabled: !!token,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api<Settings>("/settings", { token: token! }),
+    enabled: !!token,
+  });
 
   useEffect(() => {
-    api<Settings>("/settings", { token: token! })
-      .then(s => { setHour(String(s.defaultSendHour)); setMinute(String(s.defaultSendMinute)); })
-      .catch(() => {});
-  }, [token]);
+    if (settings.data) {
+      setHour(String(settings.data.defaultSendHour));
+      setMinute(String(settings.data.defaultSendMinute));
+    }
+  }, [settings.data]);
 
   const saveSettings = async () => {
     setSavingSettings(true);
@@ -160,38 +168,44 @@ export function Templates() {
     if (!deleting) return;
     try {
       await api(`/templates/${deleting.id}`, { method: "DELETE", token: token! });
-      setDeleting(null); load(); setToast({ msg: "Template excluído" });
+      setDeleting(null); refetch(); setToast({ msg: "Template excluído" });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
   };
 
   return (
     <div>
       <PageHeader title="Mensagem" />
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {ts.length === 0
-          ? <Card><p style={{ color: C.tm, textAlign: "center", fontSize: 13 }}>Nenhum template cadastrado</p></Card>
-          : ts.map(t => (
-            <Card key={t.id} style={{ cursor: "default" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</span>
-                    {t.type && <Badge color={typeColor[t.type] || C.tm}>{typeLabel[t.type] || t.type}</Badge>}
-                    {t.isDefault && <Badge color={C.ok}>Padrão</Badge>}
-                    <Badge color={t.active ? C.ok : C.tm}>{t.active ? "Ativo" : "Inativo"}</Badge>
+      {isError ? (
+        <ErrorState message="Falha ao carregar os templates." onRetry={() => refetch()} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {isLoading
+            ? <Card><p style={{ color: C.tm, textAlign: "center", fontSize: 13 }}>Carregando...</p></Card>
+            : (ts ?? []).length === 0
+              ? <Card><p style={{ color: C.tm, textAlign: "center", fontSize: 13 }}>Nenhum template cadastrado</p></Card>
+              : (ts ?? []).map(t => (
+                <Card key={t.id} style={{ cursor: "default" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{t.name}</span>
+                        {t.type && <Badge color={typeColor[t.type] || C.tm}>{typeLabel[t.type] || t.type}</Badge>}
+                        {t.isDefault && <Badge color={C.ok}>Padrão</Badge>}
+                        <Badge color={t.active ? C.ok : C.tm}>{t.active ? "Ativo" : "Inativo"}</Badge>
+                      </div>
+                      <div style={{ background: C.sa, borderRadius: 6, padding: "12px 14px", fontSize: 12, lineHeight: 1.7, color: C.tm, whiteSpace: "pre-wrap", border: "1px solid " + C.bd, fontFamily: "monospace" }}>
+                        {t.body}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <ActionBtn icon="edit" title="Editar" color={C.pr} onClick={() => { setEditing(t); setModal(true); }} />
+                      <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(t)} />
+                    </div>
                   </div>
-                  <div style={{ background: C.sa, borderRadius: 6, padding: "12px 14px", fontSize: 12, lineHeight: 1.7, color: C.tm, whiteSpace: "pre-wrap", border: "1px solid " + C.bd, fontFamily: "monospace" }}>
-                    {t.body}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <ActionBtn icon="edit" title="Editar" color={C.pr} onClick={() => { setEditing(t); setModal(true); }} />
-                  <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(t)} />
-                </div>
-              </div>
-            </Card>
-          ))}
-      </div>
+                </Card>
+              ))}
+        </div>
+      )}
 
       <div style={{ marginTop: 32 }}>
         <PageHeader title="Configurações de envio" />
@@ -201,6 +215,11 @@ export function Templates() {
             <p style={{ fontSize: 12, color: C.tm, marginBottom: 16 }}>
               Horário padrão para envio dos lembretes quando não especificado na compra.
             </p>
+            {settings.isError && (
+              <div style={{ marginBottom: 16 }}>
+                <ErrorState message="Falha ao carregar as configurações atuais." onRetry={() => settings.refetch()} />
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
               <div>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.tm, marginBottom: 6, letterSpacing: "0.06em", textTransform: "uppercase" }}>Hora (0–23)</label>
@@ -226,7 +245,7 @@ export function Templates() {
         open={modal}
         onClose={() => setModal(false)}
         editing={editing}
-        onOk={() => { load(); setModal(false); setToast({ msg: "Template atualizado" }); }}
+        onOk={() => { refetch(); setModal(false); setToast({ msg: "Template atualizado" }); }}
       />
       <ConfirmModal
         open={!!deleting}
@@ -253,7 +272,7 @@ function ActionBtn({ icon, title, color, onClick }: { icon: string; title: strin
     <button
       onClick={onClick}
       title={title}
-      style={{ padding: "7px 9px", borderRadius: 6, border: "none", cursor: "pointer", background: color + "14", color, display: "flex", alignItems: "center" }}
+      style={{ padding: "7px 9px", borderRadius: 6, border: "none", cursor: "pointer", background: alpha(color, 8), color, display: "flex", alignItems: "center" }}
     >
       <Icon name={icon} size={15} />
     </button>

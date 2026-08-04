@@ -1,4 +1,4 @@
-import { C } from "../../lib/theme";
+import { C, alpha } from "../../lib/theme";
 import { Card } from "./Card";
 import { Icon } from "./Icon";
 
@@ -12,7 +12,7 @@ interface StatProps {
 export function Stat({ icon, label, value, color = C.pr }: StatProps) {
   return (
     <Card style={{ display: "flex", alignItems: "center", gap: 16, flex: "1 1 200px" }}>
-      <div style={{ width: 40, height: 40, borderRadius: 8, background: color + "14", color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 40, height: 40, borderRadius: 8, background: alpha(color, 8), color, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Icon name={icon} size={19} />
       </div>
       <div>

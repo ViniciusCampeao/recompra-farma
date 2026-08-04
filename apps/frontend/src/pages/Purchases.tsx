@@ -1,13 +1,18 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, inp, btn } from "../lib/theme";
+import { C, inp, btn, alpha } from "../lib/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { Toast } from "../components/ui/Toast";
 import { Icon } from "../components/ui/Icon";
-import { PageHeader, TH, TD } from "../components/ui/PageHeader";
+import { PageHeader, TH, TD, TableMessage } from "../components/ui/PageHeader";
+import { ErrorState } from "../components/ui/ErrorState";
+import { Pagination } from "../components/ui/Pagination";
+
+const PAGE_SIZE = 20;
 
 interface Reminder {
   status: string;
@@ -27,6 +32,11 @@ interface Purchase {
   status: "ACTIVE" | "FINISHED" | "CANCELLED";
   customer?: { name?: string; phone: string };
   reminders?: Reminder[];
+}
+
+interface PurchasePage {
+  data: Purchase[];
+  total: number;
 }
 
 interface Customer { id: string; name?: string; phone: string }
@@ -81,7 +91,11 @@ function PurchModal({ open, onClose, onOk }: { open: boolean; onClose: () => voi
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open) api<Customer[]>("/customers", { token: token! }).then(setCs).catch(() => {});
+    if (open) {
+      api<{ data: Customer[] }>("/customers?pageSize=1000", { token: token! })
+        .then(r => setCs(r.data))
+        .catch(() => {});
+    }
   }, [open, token]);
 
   const s = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -171,7 +185,7 @@ function PurchModal({ open, onClose, onOk }: { open: boolean; onClose: () => voi
             <input style={{ ...inp, width: 60, padding: "4px 8px", textAlign: "center" }} type="number" min="0" max="59" value={f.sm} onChange={s("sm")} />
           </div>
         </div>
-        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: C.dn + "12", borderRadius: 6 }}>{err}</div>}
+        {err && <div style={{ color: C.dn, fontSize: 12, padding: "8px 12px", background: alpha(C.dn, 7), borderRadius: 6 }}>{err}</div>}
         <button onClick={go} disabled={loading} style={{ ...btn, justifyContent: "center", background: C.pr, color: "#fff" }}>
           {loading ? "Salvando..." : "Registrar compra"}
         </button>
@@ -223,7 +237,7 @@ function ConfirmDelete({ purchase, onClose, onConfirm }: { purchase: Purchase | 
 
 function ActionBtn({ icon, title, color, onClick }: { icon: string; title: string; color: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} title={title} style={{ padding: "7px 9px", borderRadius: 6, border: "none", cursor: "pointer", background: color + "14", color, display: "flex", alignItems: "center" }}>
+    <button onClick={onClick} title={title} style={{ padding: "7px 9px", borderRadius: 6, border: "none", cursor: "pointer", background: alpha(color, 8), color, display: "flex", alignItems: "center" }}>
       <Icon name={icon} size={15} />
     </button>
   );
@@ -231,23 +245,25 @@ function ActionBtn({ icon, title, color, onClick }: { icon: string; title: strin
 
 export function Purchases() {
   const { token } = useAuth();
-  const [ps, setPs] = useState<Purchase[]>([]);
+  const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
   const [inspecting, setInspecting] = useState<Purchase | null>(null);
   const [deleting, setDeleting] = useState<Purchase | null>(null);
   const [toast, setToast] = useState<{ msg: string; type?: "ok" | "error" } | null>(null);
 
-  const load = useCallback(() => {
-    api<Purchase[]>("/purchases", { token: token! }).then(setPs).catch(() => {});
-  }, [token]);
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["purchases", page],
+    queryFn: () => api<PurchasePage>(`/purchases?page=${page}&pageSize=${PAGE_SIZE}`, { token: token! }),
+    enabled: !!token,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const ps = data?.data ?? [];
 
   const doDelete = async () => {
     if (!deleting) return;
     try {
       await api(`/purchases/${deleting.id}`, { method: "DELETE", token: token! });
-      setDeleting(null); load(); setToast({ msg: "Compra excluída" });
+      setDeleting(null); refetch(); setToast({ msg: "Compra excluída" });
     } catch (e) { setToast({ msg: (e as Error).message, type: "error" }); setDeleting(null); }
   };
 
@@ -258,52 +274,63 @@ export function Purchases() {
           <Icon name="plus" size={16} />Nova compra
         </button>
       } />
-      <Card style={{ padding: 0, overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
-          <thead>
-            <tr><TH>Cliente</TH><TH>Medicamento</TH><TH>Qtd</TH><TH>Término</TH><TH>Lembrete</TH><TH></TH></tr>
-          </thead>
-          <tbody>
-            {ps.length === 0
-              ? <tr><td colSpan={6} style={{ padding: 32, textAlign: "center", color: C.tm, fontSize: 13 }}>Nenhuma compra registrada</td></tr>
-              : ps.map((p, i) => {
-                const st = sendState(p);
-                return (
-                  <tr key={p.id} style={{ borderBottom: i < ps.length - 1 ? "1px solid " + C.bd : undefined }}>
-                    <TD><span style={{ fontWeight: 500 }}>{p.customer?.name || p.customer?.phone || "—"}</span></TD>
-                    <TD>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <Icon name="pill" size={14} />
-                        {p.medicationName}
-                      </div>
-                    </TD>
-                    <TD><span style={{ color: C.tm }}>{p.quantity} {p.unit}</span></TD>
-                    <TD>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                        <span style={{ color: st.color, fontWeight: 600, fontSize: 13 }}>
-                          {p.estimatedEndDate ? `${daysLabel(p.estimatedEndDate)} · ${fmtDM(p.estimatedEndDate)}` : "—"}
-                        </span>
-                      </div>
-                    </TD>
-                    <TD>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                        <Badge color={st.color}>{st.label}</Badge>
-                        {st.sentAt && <span style={{ fontSize: 10, color: C.tm }}>em {fmtDM(st.sentAt)}</span>}
-                      </div>
-                    </TD>
-                    <TD>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                        <ActionBtn icon="eye" title="Inspecionar" color={C.pr} onClick={() => setInspecting(p)} />
-                        <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(p)} />
-                      </div>
-                    </TD>
-                  </tr>
-                );
-              })}
-          </tbody>
-        </table>
-      </Card>
-      <PurchModal open={modal} onClose={() => setModal(false)} onOk={() => { load(); setModal(false); setToast({ msg: "Compra registrada" }); }} />
+
+      {isError ? (
+        <ErrorState message="Falha ao carregar as compras." onRetry={() => refetch()} />
+      ) : (
+        <>
+          <Card style={{ padding: 0, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+              <thead>
+                <tr><TH>Cliente</TH><TH>Medicamento</TH><TH>Qtd</TH><TH>Término</TH><TH>Lembrete</TH><TH></TH></tr>
+              </thead>
+              <tbody>
+                {isLoading
+                  ? <TableMessage colSpan={6}>Carregando...</TableMessage>
+                  : ps.length === 0
+                    ? <TableMessage colSpan={6}>Nenhuma compra registrada</TableMessage>
+                    : ps.map((p, i) => {
+                      const st = sendState(p);
+                      return (
+                        <tr key={p.id} style={{ borderBottom: i < ps.length - 1 ? "1px solid " + C.bd : undefined }}>
+                          <TD><span style={{ fontWeight: 500 }}>{p.customer?.name || p.customer?.phone || "—"}</span></TD>
+                          <TD>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                              <Icon name="pill" size={14} />
+                              {p.medicationName}
+                            </div>
+                          </TD>
+                          <TD><span style={{ color: C.tm }}>{p.quantity} {p.unit}</span></TD>
+                          <TD>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                              <span style={{ color: st.color, fontWeight: 600, fontSize: 13 }}>
+                                {p.estimatedEndDate ? `${daysLabel(p.estimatedEndDate)} · ${fmtDM(p.estimatedEndDate)}` : "—"}
+                              </span>
+                            </div>
+                          </TD>
+                          <TD>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                              <Badge color={st.color}>{st.label}</Badge>
+                              {st.sentAt && <span style={{ fontSize: 10, color: C.tm }}>em {fmtDM(st.sentAt)}</span>}
+                            </div>
+                          </TD>
+                          <TD>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                              <ActionBtn icon="eye" title="Inspecionar" color={C.pr} onClick={() => setInspecting(p)} />
+                              <ActionBtn icon="trash" title="Excluir" color={C.dn} onClick={() => setDeleting(p)} />
+                            </div>
+                          </TD>
+                        </tr>
+                      );
+                    })}
+              </tbody>
+            </table>
+          </Card>
+          {data && <Pagination page={page} pageSize={PAGE_SIZE} total={data.total} onChange={setPage} />}
+        </>
+      )}
+
+      <PurchModal open={modal} onClose={() => setModal(false)} onOk={() => { refetch(); setModal(false); setToast({ msg: "Compra registrada" }); }} />
       <InspectModal purchase={inspecting} onClose={() => setInspecting(null)} />
       <ConfirmDelete purchase={deleting} onClose={() => setDeleting(null)} onConfirm={doDelete} />
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}

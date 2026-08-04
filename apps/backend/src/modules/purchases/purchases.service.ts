@@ -136,16 +136,36 @@ export class PurchasesService {
     });
   }
 
-  async findAll(customerId?: string) {
-    return this.prisma.purchase.findMany({
-      where: customerId ? { customerId } : undefined,
-      orderBy: { purchaseDate: 'desc' },
-      include: {
-        customer: { select: { id: true, name: true, phone: true } },
-        reminderConfig: true,
-        reminders: { orderBy: { scheduledFor: 'asc' } },
-      },
-    });
+  async findAll(customerId?: string, page = 1, pageSize = 20) {
+    const where = customerId ? { customerId } : undefined;
+
+    const [data, total] = await Promise.all([
+      this.prisma.purchase.findMany({
+        where,
+        orderBy: { purchaseDate: 'desc' },
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          reminderConfig: true,
+          reminders: { orderBy: { scheduledFor: 'asc' } },
+        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.purchase.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
+  }
+
+  /** Contagens agregadas pro Painel — evita buscar as listas inteiras só pra contar. */
+  async stats() {
+    const [customers, activePurchases, pendingReminders, sentReminders] = await Promise.all([
+      this.prisma.customer.count(),
+      this.prisma.purchase.count({ where: { status: PurchaseStatus.ACTIVE } }),
+      this.prisma.scheduledReminder.count({ where: { status: ReminderStatus.PENDING } }),
+      this.prisma.scheduledReminder.count({ where: { status: ReminderStatus.SENT } }),
+    ]);
+    return { customers, activePurchases, pendingReminders, sentReminders };
   }
 
   /**

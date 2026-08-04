@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { C, btn, inp } from "../lib/theme";
+import { C, btn, inp, alpha } from "../lib/theme";
 import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Icon } from "../components/ui/Icon";
@@ -245,7 +245,7 @@ export function WhatsApp() {
               <button onClick={disconnect} style={{ ...btn, background: C.sa, color: C.tm }}>
                 <Icon name="out" size={15} />Sair da sessão
               </button>
-              <button onClick={() => setConfirmWipe(true)} style={{ ...btn, background: C.dn + "12", color: C.dn }}>
+              <button onClick={() => setConfirmWipe(true)} style={{ ...btn, background: alpha(C.dn, 7), color: C.dn }}>
                 <Icon name="trash" size={15} />Apagar dados
               </button>
             </div>
@@ -301,7 +301,7 @@ export function WhatsApp() {
           <button onClick={() => setConfirmWipe(true)} style={{ ...btn, background: C.sa, color: C.tm }}>
             <Icon name="trash" size={15} />Apagar dados
           </button>
-          <button onClick={disconnect} style={{ ...btn, background: C.dn + "12", color: C.dn }}>
+          <button onClick={disconnect} style={{ ...btn, background: alpha(C.dn, 7), color: C.dn }}>
             <Icon name="out" size={15} />Sair da sessão
           </button>
         </div>
@@ -338,7 +338,7 @@ export function WhatsApp() {
                     padding: "11px 14px",
                     cursor: "pointer",
                     borderBottom: "1px solid " + C.bd,
-                    background: active ? C.pr + "0e" : "transparent",
+                    background: active ? alpha(C.pr, 5) : "transparent",
                     borderLeft: active ? "3px solid " + C.pr : "3px solid transparent",
                     display: "flex", gap: 10, alignItems: "center",
                   }}

@@ -1,20 +1,29 @@
+// Os valores abaixo são custom properties CSS (ver index.css), não cores fixas.
+// Isso permite alternar claro/escuro via atributo data-theme na <html> sem
+// precisar tocar em cada componente que importa `C`.
 export const C = {
-  bg: "#f5f6fa",
-  sf: "#ffffff",
-  sa: "#f0f1f5",
-  bd: "#e2e4ec",
-  tx: "#1a1d2e",
-  tm: "#6b7094",
-  pr: "#2563eb",
-  ph: "#3b82f6",
-  ok: "#16a34a",
-  wn: "#d97706",
-  dn: "#dc2626",
-  sb: "#1e2440",
-  sbt: "#ffffff",
-  sbm: "rgba(255,255,255,0.55)",
-  sba: "rgba(255,255,255,0.12)",
+  bg: "var(--bg)",
+  sf: "var(--sf)",
+  sa: "var(--sa)",
+  bd: "var(--bd)",
+  tx: "var(--tx)",
+  tm: "var(--tm)",
+  pr: "var(--pr)",
+  ph: "var(--ph)",
+  ok: "var(--ok)",
+  wn: "var(--wn)",
+  dn: "var(--dn)",
+  sb: "var(--sb)",
+  sbt: "var(--sbt)",
+  sbm: "var(--sbm)",
+  sba: "var(--sba)",
 } as const;
+
+// Mistura `color` com transparência (substitui o antigo hack `color + "14"`,
+// que só funcionava com strings hex literais — quebra com var(--x)).
+export function alpha(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
 
 export const inp: React.CSSProperties = {
   width: "100%",

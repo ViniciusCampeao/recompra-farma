@@ -8,9 +8,9 @@ Single-tenant. Stack: NestJS + Postgres + Prisma + Redis + Evolution API + React
 | Etapa | Escopo                                                   | Status |
 | ----- | -------------------------------------------------------- | ------ |
 | 1     | Scaffold monorepo + docker-compose + schema/migrations   | ✅      |
-| 2     | Core backend: auth, cliente, compra, cálculo, templates  | ⬜      |
-| 3     | Scheduler + envio via Evolution (sessão/QR)              | ⬜      |
-| 4     | Frontend: dashboard, tabelas, tema claro/escuro          | ⬜      |
+| 2     | Core backend: auth, cliente, compra, cálculo, templates  | ✅      |
+| 3     | Scheduler + envio via Evolution (sessão/QR)              | ✅      |
+| 4     | Frontend: dashboard, tabelas, tema claro/escuro          | 🟨 (sem tema escuro ainda) |
 | 5     | Relatórios + export Excel/PDF                            | ⬜      |
 | 6     | PWA, notificações, polish                                | ⬜      |
 
